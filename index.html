@@ -481,7 +481,7 @@ async function callAI({ kind, system, messages, prompt, images, tier, max_tokens
   if (!session) throw { code: 'unauthorized' };
   let res;
   try {
-    res = await fetch(`${CFG.SUPABASE_URL}/functions/v1/ai`, {
+    res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${CFG.AI_FUNCTION || "Ai"}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY },
       body: JSON.stringify({ kind, system, messages: messages || [{ role: 'user', content: prompt }], images, tier, max_tokens, stream: !!onText })
@@ -1134,9 +1134,15 @@ async function loadAdmin() {
 }
 async function adminFn(body) {
   const { data: { session } } = await sb.auth.getSession();
-  const res = await fetch(`${CFG.SUPABASE_URL}/functions/v1/admin`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY }, body: JSON.stringify(body) });
+  let res;
+  try {
+    res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.ADMIN_FUNCTION || "Admin"}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY }, body: JSON.stringify(body) });
+  } catch { throw { error: 'geen verbinding met de Edge Function "Admin" (bestaat hij en is Verify JWT uit?)' }; }
   const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw j;
+  if (!res.ok) {
+    const hint = { 404: 'Edge Function "Admin" niet gevonden', 401: 'login geweigerd door Supabase: zet Verify JWT uit bij de functie "admin"', 403: 'geen beheerdersrechten' }[res.status];
+    throw { error: j.error || hint || 'HTTP ' + res.status, message: j.message || j.msg || hint || '' };
+  }
   return j;
 }
 async function adminCreate() {
@@ -1150,7 +1156,7 @@ async function adminCreate() {
   for (let i = 0; i < list.length; i++) {
     setBusy(`Account ${i + 1} van ${list.length} toevoegen…`);
     try { const r = await adminFn({ action: 'create', email: list[i].email, name: list[i].name, role, groep, daily_ai_limit: limit, sendMail }); ok++; if (r.mailed) mailed++; }
-    catch (e) { fails.push(`${list[i].email} (${e.error === 'exists' ? 'bestaat al' : e.error === 'bad_email' ? 'ongeldig adres' : 'fout'})`); }
+    catch (e) { console.error('admin create', e); fails.push(`${list[i].email} (${e.error === 'exists' ? 'bestaat al' : e.error === 'bad_email' ? 'ongeldig adres' : e.error === 'db' ? 'databasefout: ' + (e.message || '') : (e.error || 'fout') + (e.message && e.message !== e.error ? ': ' + e.message : '')})`); }
   }
   setBusy(null);
   toast(`${plural(ok, 'account', 'accounts')} toegevoegd${sendMail ? `, ${mailed} welkomstmail${mailed === 1 ? '' : 's'} verstuurd` : ''}.${fails.length ? ' Niet gelukt: ' + fails.join(', ') : ''}`, 9000);
