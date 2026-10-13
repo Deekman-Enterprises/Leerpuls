@@ -1,0 +1,1323 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Leerpuls</title>
+<meta name="description" content="Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg met AI. Leerpuls by Deekman Enterprises.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23161D36'/%3E%3Crect x='6' y='17' width='20' height='6' fill='%23F4E840'/%3E%3Cpath d='M9 8v14h13' stroke='%23fff' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: één studiebureau — kop, schuifbare tabstrook, één werkkolom; systeemkaarten en markeerstift dragen de identiteit */
+:root{
+  --paper:#F4F6FA; --card:#FFFFFF; --ink:#161D36; --muted:#5A6280; --line:#DCE0EA;
+  --pen:#3446D1; --hl:rgba(244,232,64,.9); --hl-solid:#F4E840; --on-hl:#161D36;
+  --good:#1D8657; --good-bg:#E3F4EB; --bad:#BF3B34; --bad-bg:#FBE7E5; --warn:#A86A12; --warn-bg:#FBF0DC;
+  --rule:#C9D6F2; --margin:#E58B8B;
+  --v1:#3446D1; --v2:#1D8657; --v3:#C2410C; --v4:#8B3FD1; --v5:#0E7490; --v6:#B4235A;
+  --f-display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
+  --f-body:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --r:10px; color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --paper:#0F1220; --card:#181C2C; --ink:#E7E9F2; --muted:#9AA1BB; --line:#2A3048;
+  --pen:#8E9BFF; --hl:rgba(222,210,60,.38); --hl-solid:#DED23C; --on-hl:#161D36;
+  --good:#4CC38A; --good-bg:#15301F; --bad:#F07068; --bad-bg:#3A1A1A; --warn:#E3AC4E; --warn-bg:#33270F;
+  --rule:#26304D; --margin:#8A4A4A;
+  --v1:#8E9BFF; --v2:#4CC38A; --v3:#F39A5B; --v4:#C29BFF; --v5:#4FC3DA; --v6:#F07AA6; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--paper);color:var(--ink);margin:0}
+body{font-family:var(--f-body);font-size:16px;line-height:1.55;padding-inline:16px;padding-block:env(safe-area-inset-top,0px) 48px}
+img{max-width:100%}
+.wrap{max-width:1040px;margin:0 auto}
+h1,h2,h3{font-family:var(--f-display);line-height:1.15;text-wrap:balance;margin:0}
+h2{font-size:1.6rem;font-weight:800}
+h3{font-size:1.15rem;font-weight:600}
+p{margin:0}
+.mark{background:linear-gradient(transparent 58%,var(--hl) 58%);padding:0 .1em}
+.muted{color:var(--muted)} .small{font-size:.875rem}
+.label{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+/* kop */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:20px 12px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand h1{font-size:1.9rem;font-weight:800;letter-spacing:-.02em}
+.brand .by{font-size:.8rem;color:var(--muted)}
+.meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.88rem;color:var(--muted)}
+.streak{font-family:var(--f-mono);font-size:.82rem;background:var(--hl);color:var(--ink);border-radius:20px;padding:2px 10px}
+.tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:24px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{font:inherit;font-weight:700;background:none;border:0;color:var(--muted);padding:10px 12px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-1px}
+.tab[aria-current="page"]{color:var(--ink);border-bottom-color:var(--hl-solid)}
+.tab:hover{color:var(--ink)}
+.tab .n{font-family:var(--f-mono);font-size:.75rem;background:var(--hl);color:var(--ink);border-radius:20px;padding:0 6px;margin-left:4px}
+
+/* vlakken */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px;display:grid;gap:14px;min-width:0}
+.stack{display:grid;gap:16px}
+.grid2{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));align-items:start}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.between{justify-content:space-between}
+.notice{border-radius:var(--r);padding:12px 14px;font-size:.92rem;background:var(--warn-bg);color:var(--ink);border:1px solid var(--line)}
+
+/* bediening */
+button{font:inherit}
+.btn{font-weight:700;border-radius:8px;padding:9px 16px;border:1px solid var(--ink);background:var(--ink);color:var(--paper);cursor:pointer;line-height:1.3}
+.btn:hover{filter:brightness(1.15)}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--ink);filter:none}
+.btn.hl{background:var(--hl-solid);border-color:var(--hl-solid);color:var(--on-hl)}
+.btn.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.sm{padding:5px 10px;font-size:.85rem}
+.btn.wide{width:100%}
+.btn[disabled]{opacity:.45;cursor:not-allowed;filter:none}
+.link{background:none;border:0;color:var(--pen);cursor:pointer;padding:0;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--pen);outline-offset:2px}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:90px}
+input[type=checkbox]{width:auto}
+.field{display:grid;gap:5px;min-width:0}
+.field>span{font-size:.85rem;font-weight:700}
+.fields{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{font-weight:700;font-size:.9rem;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:20px;padding:6px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* stofkiezer */
+.picker{display:grid;gap:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:20px;padding:5px 12px;font-size:.9rem;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--hl);border-color:var(--hl-solid);font-weight:700}
+.pill{display:inline-block;font-size:.75rem;font-weight:700;border-radius:20px;padding:2px 9px;background:var(--paper);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.good{background:var(--good-bg);color:var(--good);border-color:transparent}
+.pill.bad{background:var(--bad-bg);color:var(--bad);border-color:transparent}
+.pill.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.vakdot{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--vc,var(--line));flex:none}
+
+/* lijsten */
+.list{display:grid;border-top:1px solid var(--line)}
+.item{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.item .main{min-width:0;flex:1 1 220px;display:grid;gap:2px}
+.item .t{font-weight:700;overflow-wrap:anywhere}
+.preview{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:.9rem;white-space:pre-wrap;max-height:300px;overflow:auto;flex-basis:100%}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+
+/* vakken */
+.vakgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr))}
+.vakcard{text-align:left;cursor:pointer;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:var(--r);padding:16px 16px 14px;display:grid;gap:8px;position:relative;overflow:hidden}
+.vakcard::before{content:"";position:absolute;inset:0 auto 0 0;width:6px;background:var(--vc)}
+.vakcard:hover{border-color:var(--ink)}
+.vakcard b{font-family:var(--f-display);font-size:1.15rem}
+.swatches{display:flex;gap:6px}
+.swatches button{width:26px;height:26px;border-radius:6px;border:2px solid transparent;background:var(--vc);cursor:pointer}
+.swatches button[aria-pressed="true"]{border-color:var(--ink)}
+
+/* cijfers */
+.cijfer{font-family:var(--f-display);font-weight:800;font-variant-numeric:tabular-nums}
+.cijfer.big{font-size:4rem;line-height:1}
+.cijfer.v{color:var(--good)} .cijfer.o{color:var(--bad)}
+.grade{font-family:var(--f-mono);font-size:.85rem;padding:2px 8px;border-radius:6px;font-weight:500}
+.grade.v{background:var(--good-bg);color:var(--good)} .grade.o{background:var(--bad-bg);color:var(--bad)}
+
+/* upload */
+.drop{border:2px dashed var(--line);border-radius:var(--r);padding:22px;text-align:center;display:grid;gap:8px;justify-items:center;cursor:pointer;background:var(--paper)}
+.drop.over{border-color:var(--pen);background:var(--card)}
+.drop input{display:none}
+
+/* toets */
+.q{font-size:1.2rem;font-weight:700;line-height:1.4}
+.opts{display:grid;gap:8px}
+.opt{text-align:left;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:12px 14px;cursor:pointer;display:flex;gap:10px;align-items:flex-start}
+.opt .k{font-family:var(--f-mono);color:var(--muted)}
+.opt:hover:not([disabled]){border-color:var(--ink)}
+.opt.right{border-color:var(--good);background:var(--good-bg)}
+.opt.wrong{border-color:var(--bad);background:var(--bad-bg)}
+.opt[disabled]{cursor:default}
+.bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--hl-solid)}
+.fb{border-left:4px solid var(--line);padding:6px 12px;font-size:.95rem;display:grid;gap:4px}
+.fb.good{border-color:var(--good)} .fb.bad{border-color:var(--bad)} .fb.half{border-color:var(--warn)}
+
+/* systeemkaart */
+.cardwrap{display:grid;justify-items:center;gap:16px}
+.icard{width:min(100%,560px);aspect-ratio:5/3;max-width:100%;background-color:var(--card);border:1px solid var(--line);border-radius:6px;box-shadow:0 10px 30px -18px rgba(22,29,54,.5);position:relative;
+  background-image:linear-gradient(90deg,transparent 46px,var(--margin) 46px,var(--margin) 47px,transparent 47px),repeating-linear-gradient(var(--card) 0 31px,var(--rule) 31px 32px);
+  background-position:0 0,0 44px;padding:52px 24px 20px 62px;display:flex;align-items:center;cursor:pointer;overflow:auto}
+.icard .side{position:absolute;top:12px;left:62px;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.icard .txt{font-size:1.25rem;font-weight:700;line-height:1.4;overflow-wrap:anywhere}
+.icard.back .txt{font-weight:400;font-size:1.1rem}
+.boxes{display:flex;gap:4px}
+.boxes i{width:16px;height:10px;border-radius:2px;background:var(--line)}
+.boxes i.on{background:var(--hl-solid)}
+
+/* gesprek */
+.chat{display:grid;gap:12px;max-height:56vh;overflow-y:auto;padding:4px}
+.msg{max-width:min(85%,620px);padding:10px 14px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.ai{background:var(--paper);border:1px solid var(--line);justify-self:start;border-bottom-left-radius:4px}
+.msg.me{background:var(--ink);color:var(--paper);justify-self:end;border-bottom-right-radius:4px}
+.msg.tip{background:var(--hl);color:var(--ink);justify-self:center;font-size:.9rem;max-width:min(92%,640px)}
+.who-l{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.msg.me .who-l{color:inherit;opacity:.7}
+.scen{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
+.scen button{text-align:left;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:var(--r);padding:14px;cursor:pointer;display:grid;gap:4px}
+.scen button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);background:var(--card)}
+.scen b{font-family:var(--f-display);font-size:1.05rem}
+
+/* leerplan */
+.plan{display:grid;gap:6px}
+.task{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--paper);border:1px solid var(--line);cursor:pointer;text-align:left;color:var(--ink);width:100%}
+.task .box{width:18px;height:18px;border:2px solid var(--muted);border-radius:4px;flex:none;margin-top:2px;display:grid;place-items:center;font-size:12px;line-height:1}
+.task.done{opacity:.6}
+.task.done .box{background:var(--good);border-color:var(--good);color:#fff}
+.task.done .tt{text-decoration:line-through}
+.task .d{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);white-space:nowrap}
+
+/* tekst uit AI */
+.md{display:grid;gap:8px;min-width:0;overflow-wrap:anywhere}
+.md h4{font-family:var(--f-display);font-size:1.1rem;margin:8px 0 0}
+.md ul{margin:0;padding-left:1.2em;display:grid;gap:4px}
+.md strong{background:linear-gradient(transparent 60%,var(--hl) 60%)}
+
+/* inlogscherm */
+.gate{min-height:calc(100vh - 40px);display:grid;place-items:center;padding-block:32px}
+.gatebox{width:min(100%,420px);display:grid;gap:18px}
+.gatebox .panel{gap:16px}
+.gatebox h1{font-size:2.4rem;font-weight:800;letter-spacing:-.02em}
+.codein{font-family:var(--f-mono);font-size:1.5rem;letter-spacing:.3em;text-align:center}
+.err{color:var(--bad);font-size:.92rem;font-weight:700}
+.ok{color:var(--good);font-size:.92rem;font-weight:700}
+
+/* bezig + meldingen */
+.busy{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--ink);color:var(--paper);border-radius:0 0 10px 10px;padding:8px 14px;font-size:.9rem;display:flex;gap:10px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--hl-solid);animation:p 1s infinite alternate}
+@keyframes p{to{opacity:.25}}
+.toasts{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:grid;justify-items:center;gap:8px;z-index:9;pointer-events:none}
+.toast{background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;max-width:520px;font-size:.92rem;pointer-events:auto}
+.steps{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
+.steps div{display:grid;gap:4px;border-top:3px solid var(--hl-solid);padding-top:10px}
+.meter{display:flex;align-items:center;gap:8px}
+.meter .bar{flex:1;min-width:60px}
+@media (prefers-reduced-motion: reduce){.dot{animation:none}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate" class="gate"></div>
+  <div id="app" hidden></div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+'use strict';
+const CFG = window.LEERPULS_CONFIG || {};
+const OWNER = 'info@deekmanenterprises.com';
+const CONFIG_OK = !!(CFG.SUPABASE_URL && CFG.SUPABASE_KEY && !CFG.SUPABASE_URL.includes('JOUW-PROJECT') && !CFG.SUPABASE_KEY.includes('VUL_HIER'));
+let sb = null;
+try { if (CONFIG_OK && window.supabase) sb = window.supabase.createClient(CFG.SUPABASE_URL.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, ''), CFG.SUPABASE_KEY); } catch (e) { console.error(e); }
+
+/* ================= helpers ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const DAY = 864e5;
+const fmtCijfer = n => (Math.round(Number(n) * 10) / 10).toFixed(1).replace('.', ',');
+const vClass = n => Number(n) >= 5.5 ? 'v' : 'o';
+const fmtDate = ts => new Date(ts).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+const fmtDay = d => new Date(d + 'T00:00').toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' });
+const todayStr = () => new Date().toLocaleDateString('sv-SE');
+const plural = (n, a, b) => n + ' ' + (n === 1 ? a : b);
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function daysUntil(d) { const t = new Date(); t.setHours(0, 0, 0, 0); return Math.round((new Date(d + 'T00:00') - t) / DAY); }
+function toast(msg, ms = 4500) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; $('#toasts').append(t); setTimeout(() => t.remove(), ms); }
+function md(t) {
+  const lines = esc(t).split('\n'); let html = '', inList = false;
+  for (let l of lines) {
+    l = l.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    const h = l.match(/^#{1,4}\s+(.*)/);
+    const li = l.match(/^\s*[-*•]\s+(.*)/) || l.match(/^\s*\d+[.)]\s+(.*)/);
+    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${li[1]}</li>`; continue; }
+    if (inList) { html += '</ul>'; inList = false; }
+    if (h) html += `<h4>${h[1]}</h4>`; else if (l.trim()) html += `<p>${l}</p>`;
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) return res();
+    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('bibliotheek kon niet laden'));
+    document.head.append(s);
+  });
+}
+function parseJson(t) {
+  t = String(t || '').trim();
+  try { return JSON.parse(t); } catch {}
+  const f = t.match(/```(?:json)?\s*([\s\S]*?)```/); if (f) { try { return JSON.parse(f[1]); } catch {} }
+  const s = t.search(/[\[{]/), e = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+  if (s >= 0 && e > s) { try { return JSON.parse(t.slice(s, e + 1)); } catch {} }
+  throw { code: 'invalid_json' };
+}
+function download(name, text, type = 'application/json') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const writers = {};
+function chain(key, fn) {
+  const w = writers[key] || (writers[key] = { running: null, next: null });
+  if (w.running) { w.next = fn; return w.running; }
+  const run = async f => {
+    try { await f(); } catch (e) { dbErr(e); }
+    if (w.next) { const n = w.next; w.next = null; return run(n); }
+    w.running = null;
+  };
+  w.running = run(fn); return w.running;
+}
+function dbErr(e) { console.error(e); toast('Opslaan lukte niet. Controleer je internetverbinding en probeer het opnieuw.', 6000); }
+async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+
+/* ================= state ================= */
+const S = {
+  tab: 'vandaag', user: null, account: null, isAdmin: false,
+  vakken: [], docs: [], texts: {}, decks: [], results: [], sessions: [], exams: [], days: new Set(),
+  ai: { used: 0, limit: 0, unlimited: false },
+  sel: { quiz: new Set(), cards: new Set(), chat: new Set(), qa: new Set() },
+  busy: null, openDoc: null, confirm: null, openVak: null, openPlan: null, newVakKleur: '1',
+  quiz: { phase: 'setup', n: 10, soort: 'mix', niveau: 'toets' },
+  cardsSet: { n: 15 }, study: null,
+  chat: { phase: 'setup', scenario: 'mondeling', toon: 'neutraal', lengte: 'normaal', msgs: [], tips: {} },
+  qa: { msgs: [], out: '' },
+  admin: { rows: null, newRole: 'student', bulk: false }
+};
+const G = { step: 'email', email: '', msg: '', err: '', busy: false, resendAt: 0, reason: '' };
+
+/* ================= inloggen ================= */
+function authErr(e) {
+  const m = (e && e.message || '').toLowerCase();
+  if (m.includes('signups not allowed') || m.includes('user not found')) return 'Dit e-mailadres heeft nog geen Leerpuls-account. Vraag je beheerder om je toe te voegen.';
+  if (m.includes('security purposes') || m.includes('rate limit')) return 'Je hebt net al een code aangevraagd. Wacht een minuut en probeer het opnieuw.';
+  if (m.includes('invalid login credentials')) return 'E-mailadres of wachtwoord klopt niet. Nog geen wachtwoord ingesteld? Log dan in met een code.';
+  if (m.includes('expired') || m.includes('invalid') && m.includes('token')) return 'Deze code klopt niet of is verlopen. Vraag een nieuwe code aan.';
+  if (m.includes('password should be') || m.includes('weak')) return 'Kies een sterker wachtwoord: minimaal 8 tekens.';
+  if (m.includes('same password') || m.includes('different from the old')) return 'Kies een ander wachtwoord dan je huidige.';
+  return 'Er ging iets mis. Probeer het opnieuw.';
+}
+function renderGate() {
+  const g = G; let body = '';
+  const err = g.err ? `<p class="err" role="alert">${esc(g.err)}</p>` : '';
+  const msg = g.msg ? `<p class="ok">${esc(g.msg)}</p>` : '';
+  if (g.step === 'email') body = `<h2>Inloggen</h2><p class="muted small">Vul je e-mailadres in. We sturen je een inlogcode.</p>
+    <form id="fEmail" class="stack"><label class="field"><span>E-mailadres</span><input id="gEmail" type="email" autocomplete="email" required value="${esc(g.email)}"></label>${err}${msg}
+    <button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Code versturen…' : 'Stuur inlogcode'}</button></form>
+    <button class="link" data-gate="password">Inloggen met wachtwoord</button>`;
+  if (g.step === 'code') body = `<h2>Vul je code in</h2><p class="muted small">We hebben een inlogcode gestuurd naar <b>${esc(g.email)}</b>. Kijk ook even in je spam.</p>
+    <form id="fCode" class="stack"><label class="field"><span>Inlogcode</span><input id="gCode" class="codein" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required></label>${err}${msg}
+    <button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Controleren…' : 'Inloggen'}</button></form>
+    <div class="row between"><button class="link" data-gate="resend">Nieuwe code sturen</button><button class="link" data-gate="email">Ander e-mailadres</button></div>`;
+  if (g.step === 'password') body = `<h2>Inloggen met wachtwoord</h2>
+    <form id="fPw" class="stack"><label class="field"><span>E-mailadres</span><input id="gEmail2" type="email" autocomplete="email" required value="${esc(g.email)}"></label>
+    <label class="field"><span>Wachtwoord</span><input id="gPw" type="password" autocomplete="current-password" required></label>${err}
+    <button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Inloggen…' : 'Inloggen'}</button></form>
+    <p class="small muted">Wachtwoord vergeten of nog niet ingesteld? <button class="link" data-gate="email">Log in met een code</button> en stel daarna een nieuw wachtwoord in.</p>`;
+  if (g.step === 'setpw') body = `<h2>Stel een wachtwoord in</h2><p class="muted small">Dan kun je de volgende keer direct inloggen, zonder op een code te wachten. Je kunt ook altijd met een code blijven inloggen.</p>
+    <form id="fSet" class="stack"><label class="field"><span>Nieuw wachtwoord (minimaal 8 tekens)</span><input id="gNew" type="password" autocomplete="new-password" minlength="8" required></label>
+    <label class="field"><span>Herhaal wachtwoord</span><input id="gNew2" type="password" autocomplete="new-password" minlength="8" required></label>${err}
+    <button class="btn wide" ${g.busy ? 'disabled' : ''}>Wachtwoord opslaan</button></form>
+    <button class="link" data-gate="skip">Later instellen</button>`;
+  if (g.step === 'blocked') body = `<h2>Geen toegang</h2><p>${esc(g.reason)}</p><p class="small muted">Vragen? Mail naar <span class="mono">${OWNER}</span>.</p><button class="btn ghost" data-gate="logout">Terug naar inloggen</button>`;
+  if (g.step === 'loading') body = `<p class="muted">Bezig met laden…</p>`;
+  $('#gate').innerHTML = `<div class="gatebox"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div><section class="panel">${body}</section>
+  <p class="small muted">Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg.</p></div>`;
+  const focus = { email: '#gEmail', code: '#gCode', password: g.email ? '#gPw' : '#gEmail2', setpw: '#gNew' }[g.step];
+  if (focus && $(focus)) $(focus).focus();
+}
+function showGate(step, extra = {}) { Object.assign(G, { step, err: '', msg: '', busy: false }, extra); $('#app').hidden = true; $('#gate').hidden = false; renderGate(); }
+
+async function sendCode(email) {
+  G.busy = true; G.err = ''; renderGate();
+  const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+  G.busy = false;
+  if (error) { G.err = authErr(error); renderGate(); return false; }
+  G.email = email; G.resendAt = Date.now() + 60000; showGate('code', { email, msg: '' }); return true;
+}
+document.addEventListener('submit', async e => {
+  const f = e.target; if (!f.id || !f.id.startsWith('f')) return;
+  e.preventDefault();
+  if (f.id === 'fEmail') { const email = $('#gEmail').value.trim().toLowerCase(); G.email = email; await sendCode(email); }
+  if (f.id === 'fCode') {
+    const token = $('#gCode').value.replace(/\s/g, ''); G.busy = true; G.err = ''; renderGate();
+    const { error } = await sb.auth.verifyOtp({ email: G.email, token, type: 'email' });
+    if (error) { G.busy = false; G.err = authErr(error); renderGate(); return; }
+    G.busy = false; await start(true);
+  }
+  if (f.id === 'fPw') {
+    const email = $('#gEmail2').value.trim().toLowerCase(); const password = $('#gPw').value; G.email = email; G.busy = true; G.err = ''; renderGate();
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { G.busy = false; G.err = authErr(error); renderGate(); return; }
+    G.busy = false; await start(false);
+  }
+  if (f.id === 'fSet') {
+    const a = $('#gNew').value, b = $('#gNew2').value;
+    if (a.length < 8) { G.err = 'Je wachtwoord moet minimaal 8 tekens hebben.'; renderGate(); return; }
+    if (a !== b) { G.err = 'De twee wachtwoorden zijn niet hetzelfde.'; renderGate(); return; }
+    G.busy = true; renderGate();
+    const { error } = await sb.auth.updateUser({ password: a, data: { password_set: true } });
+    if (error) { G.busy = false; G.err = authErr(error); renderGate(); return; }
+    toast('Je wachtwoord is ingesteld.'); showApp();
+  }
+  if (f.id === 'fAcctPw') {
+    const a = $('#acPw').value, b = $('#acPw2').value;
+    if (a.length < 8) return toast('Je wachtwoord moet minimaal 8 tekens hebben.');
+    if (a !== b) return toast('De twee wachtwoorden zijn niet hetzelfde.');
+    const { error } = await sb.auth.updateUser({ password: a, data: { password_set: true } });
+    if (error) return toast(authErr(error), 6000);
+    $('#acPw').value = ''; $('#acPw2').value = ''; S.user.user_metadata = { ...(S.user.user_metadata || {}), password_set: true };
+    toast('Je wachtwoord is opgeslagen.'); render();
+  }
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-gate]'); if (!b) return;
+  const a = b.dataset.gate;
+  if (a === 'password') showGate('password');
+  if (a === 'email') showGate('email');
+  if (a === 'resend') { if (Date.now() < G.resendAt) { G.err = `Wacht nog ${Math.ceil((G.resendAt - Date.now()) / 1000)} seconden voor een nieuwe code.`; renderGate(); return; } await sendCode(G.email); G.msg = 'Nieuwe code verstuurd.'; renderGate(); }
+  if (a === 'skip') { try { sessionStorage.setItem('lp_skip_pw', '1'); } catch {} showApp(); }
+  if (a === 'logout') { if (!sb) { location.reload(); return; } await sb.auth.signOut(); showGate('email'); }
+});
+
+let started = false;
+async function start(viaCode) {
+  if (started) return; started = true;
+  showGate('loading');
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { started = false; showGate('email'); return; }
+  S.user = session.user;
+  const { data: acc, error } = await sb.rpc('link_account');
+  if (error || !acc || !acc.email) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Dit e-mailadres heeft (nog) geen Leerpuls-account. Vraag je beheerder om je toe te voegen.' }); return; }
+  if (!acc.active) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Je account is gepauzeerd door de beheerder.' }); return; }
+  S.account = acc; S.isAdmin = acc.email === OWNER || acc.role === 'admin';
+  let skip = false; try { skip = sessionStorage.getItem('lp_skip_pw') === '1'; } catch {}
+  if (viaCode && !(S.user.user_metadata || {}).password_set && !skip) { showGate('setpw'); return; }
+  showApp();
+}
+async function showApp() {
+  $('#gate').hidden = true; $('#app').hidden = false;
+  render(); await loadAll(); render();
+}
+if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { started = false; showGate('email'); } });
+
+/* ================= data ================= */
+async function loadAll() {
+  setBusy('Je stof wordt geladen…');
+  try {
+    const [vakken, docs, decks, results, sessions, exams, days] = await Promise.all([
+      q(sb.from('vakken').select('*').order('created_at')),
+      q(sb.from('documents').select('id,vak_id,title,chars,source,summary,file_path,file_name,created_at').order('created_at', { ascending: false })),
+      q(sb.from('decks').select('*').order('created_at', { ascending: false })),
+      q(sb.from('results').select('*').order('created_at', { ascending: false }).limit(200)),
+      q(sb.from('sessions').select('id,title,scenario,cijfer,feedback,created_at').order('created_at', { ascending: false }).limit(50)),
+      q(sb.from('exams').select('*').order('datum')),
+      q(sb.from('study_days').select('day').order('day', { ascending: false }).limit(400))
+    ]);
+    Object.assign(S, { vakken, docs, decks, results, sessions, exams, days: new Set(days.map(d => d.day)) });
+    await refreshAi();
+  } catch (e) { console.error(e); toast('Laden lukte niet. Ververs de pagina.', 7000); }
+  finally { S.busy = null; }
+}
+async function refreshAi() { try { const { data } = await sb.rpc('my_ai_status'); if (data) S.ai = data; } catch {} }
+async function markStudy() {
+  const d = todayStr(); if (S.days.has(d)) return; S.days.add(d);
+  try { await q(sb.from('study_days').upsert({ day: d }, { onConflict: 'user_id,day', ignoreDuplicates: true })); } catch (e) { console.error(e); }
+}
+function streak() {
+  let n = 0; const d = new Date(); d.setHours(12);
+  if (!S.days.has(d.toLocaleDateString('sv-SE'))) d.setDate(d.getDate() - 1);
+  while (S.days.has(d.toLocaleDateString('sv-SE'))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+async function ensureTexts(ids) {
+  const miss = ids.filter(i => S.texts[i] == null);
+  if (miss.length) { const rows = await q(sb.from('documents').select('id,text').in('id', miss)); rows.forEach(r => S.texts[r.id] = r.text || ''); }
+}
+async function material(ids, max = 70000) {
+  await ensureTexts(ids);
+  const ds = S.docs.filter(d => ids.includes(d.id));
+  const per = Math.floor(max / Math.max(1, ds.length));
+  return ds.map(d => `### ${d.title} (${vakNaam(d.vak_id)})\n${(S.texts[d.id] || '').slice(0, per)}`).join('\n\n');
+}
+const vak = id => S.vakken.find(v => v.id === id);
+const vakNaam = id => (vak(id) || {}).naam || 'Zonder vak';
+const vakColor = id => { const v = vak(id); return v ? `var(--v${v.kleur || 1})` : 'var(--line)'; };
+const commonVak = ids => { const s = [...new Set(S.docs.filter(d => ids.includes(d.id)).map(d => d.vak_id))]; return s.length === 1 ? s[0] : null; };
+
+/* ================= AI ================= */
+function aiErr(e) {
+  const c = e && e.code; if (c === 'abort') return;
+  if (e && e.details !== undefined && e.hint !== undefined) return dbErr(e); // databasefout, geen AI-fout
+  const m = {
+    limit: `Je AI-tegoed voor vandaag is op (${(e && e.limit) || S.ai.limit} acties). Morgen kun je weer verder; flashcards herhalen en je stof bekijken kan gewoon.`,
+    busy: 'De AI is even erg druk. Probeer het over een minuut opnieuw.',
+    no_key: 'De AI is nog niet ingesteld. Laat je beheerder de API-key toevoegen.',
+    paused: 'Je account is gepauzeerd door de beheerder.',
+    too_large: 'Te veel stof in één keer. Kies minder documenten.',
+    invalid_json: 'De AI gaf een antwoord dat niet te lezen was. Probeer het nog een keer.',
+    unauthorized: 'Je sessie is verlopen. Log opnieuw in.',
+    network: 'Geen verbinding met de AI. Controleer je internet en probeer het opnieuw.'
+  };
+  toast(m[c] || 'De AI gaf een fout. Probeer het opnieuw.', 7000);
+}
+async function callAI({ kind, system, messages, prompt, images, tier, max_tokens, onText }) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw { code: 'unauthorized' };
+  let res;
+  try {
+    res = await fetch(`${CFG.SUPABASE_URL}/functions/v1/ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY },
+      body: JSON.stringify({ kind, system, messages: messages || [{ role: 'user', content: prompt }], images, tier, max_tokens, stream: !!onText })
+    });
+  } catch { throw { code: 'network' }; }
+  if (!res.ok) { const j = await res.json().catch(() => ({})); throw { code: j.error || 'upstream', limit: j.limit }; }
+  const rem = res.headers.get('x-ai-remaining');
+  if (rem != null && !S.ai.unlimited) S.ai.used = Math.max(0, S.ai.limit - Number(rem));
+  if (!onText) { const j = await res.json(); return j.text || ''; }
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '', text = '';
+  for (;;) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+        if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { text += ev.delta.text; onText(text); }
+        if (ev.type === 'error') throw { code: 'busy' };
+      }
+    }
+  }
+  return text;
+}
+async function aiJson(opts) { const t = await callAI({ max_tokens: 8000, ...opts }); return parseJson(t); }
+function setBusy(msg) { S.busy = msg; render(); }
+
+/* ================= documenten ================= */
+const MAXCH = 100000;
+async function addDocument({ title, vakId, text, source, file }) {
+  text = (text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (text.length < 40) { toast(`“${title}” bevat (bijna) geen tekst. Is het een scan? Voeg dan foto's van de pagina's toe.`, 7000); return; }
+  const parts = [];
+  for (let i = 0; i < text.length && parts.length < 8; i += MAXCH) parts.push(text.slice(i, i + MAXCH));
+  for (let i = 0; i < parts.length; i++) {
+    const row = await q(sb.from('documents').insert({
+      vak_id: vakId || null, title: parts.length > 1 ? `${title} (deel ${i + 1})` : title,
+      text: parts[i], chars: parts[i].length, source
+    }).select('id,vak_id,title,chars,source,summary,file_path,file_name,created_at').single());
+    S.texts[row.id] = parts[i];
+    if (file && i === 0) {
+      const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-120);
+      const path = `${S.user.id}/${row.id}/${safe}`;
+      const { error } = await sb.storage.from('documenten').upload(path, file, { upsert: true, contentType: file.type || undefined });
+      if (!error) { await sb.from('documents').update({ file_path: path, file_name: file.name }).eq('id', row.id); row.file_path = path; row.file_name = file.name; }
+    }
+    S.docs.unshift(row);
+  }
+  toast(`“${title}” is toegevoegd${parts.length > 1 ? ` in ${parts.length} delen` : ''}.`);
+}
+async function readPdf(file) {
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+  const lib = window.pdfjsLib;
+  lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  let out = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const c = await (await pdf.getPage(p)).getTextContent();
+    out += c.items.map(it => it.str + (it.hasEOL ? '\n' : ' ')).join('') + '\n\n';
+    if (p % 5 === 0) setBusy(`PDF lezen… pagina ${p} van ${pdf.numPages}`);
+  }
+  return out;
+}
+async function readDocx(file) {
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+  return (await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
+}
+async function toBase64Image(file) {
+  let blob = file;
+  if (file.size > 1.2e6 || !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1800 / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+    blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.85));
+  }
+  const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+  return { media_type: blob.type || 'image/jpeg', data };
+}
+async function readImages(files) {
+  let text = '';
+  for (let i = 0; i < files.length; i += 5) {
+    const batch = await Promise.all(files.slice(i, i + 5).map(toBase64Image));
+    setBusy(`Foto's lezen met AI… (${Math.min(i + 5, files.length)} van ${files.length})`);
+    text += await callAI({ kind: 'foto', images: batch, max_tokens: 8000, prompt: "Schrijf alle leesbare tekst uit deze foto('s) van studiemateriaal of aantekeningen letterlijk over, in de volgorde van de pagina's. Behoud kopjes en opsommingen. Is iets handgeschreven, doe dan je best en zet onleesbare woorden tussen [ ]. Geef alleen de tekst, zonder inleiding." }) + '\n\n';
+  }
+  return text;
+}
+async function handleFiles(files, vakId, title) {
+  files = Array.from(files);
+  const imgs = files.filter(f => f.type.startsWith('image/'));
+  try {
+    for (const f of files) {
+      if (f.type.startsWith('image/')) continue;
+      const ext = f.name.split('.').pop().toLowerCase();
+      if (f.size > 40e6) { toast(`${f.name} is groter dan 40 MB.`); continue; }
+      try {
+        setBusy(`“${f.name}” lezen…`);
+        let text = '';
+        if (ext === 'pdf') text = await readPdf(f);
+        else if (ext === 'docx') text = await readDocx(f);
+        else if (['txt', 'md', 'csv'].includes(ext)) text = await f.text();
+        else { toast(`${f.name}: dit type wordt niet ondersteund. Gebruik PDF, Word (.docx), tekst of foto's.`, 6000); continue; }
+        await addDocument({ title: f.name.replace(/\.[^.]+$/, ''), vakId, text, source: ext, file: f });
+      } catch (e) { console.error(e); toast(`${f.name} kon niet gelezen worden.`, 6000); }
+    }
+    if (imgs.length) {
+      try { const text = await readImages(imgs); await addDocument({ title: title || `Aantekeningen ${fmtDate(Date.now())}`, vakId, text, source: 'foto' }); }
+      catch (e) { aiErr(e); }
+    }
+  } finally { setBusy(null); }
+}
+
+/* ================= weergaven ================= */
+function tabs() {
+  const t = [['vandaag', 'Vandaag'], ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
+  if (S.isAdmin) t.push(['beheer', 'Beheer']);
+  t.push(['account', 'Account']);
+  return t;
+}
+const dueCards = () => { const now = Date.now(); let n = 0; for (const d of S.decks) for (const c of d.cards || []) if ((c.due || 0) <= now) n++; return n; };
+
+function view() {
+  const name = S.account && S.account.name || ''; const due = dueCards(); const st = streak();
+  let h = '';
+  if (S.busy) h += `<div class="busy" role="status"><span class="dot"></span>${esc(S.busy)}</div>`;
+  h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
+  <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
+  h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}</button>`).join('')}</nav>`;
+  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, account: vAccount })[S.tab]();
+  return h;
+}
+function picker(key, hint) {
+  if (!S.docs.length) return `<div class="notice">Je hebt nog geen stof. <button class="link" data-act="tab" data-tab="vakken">Voeg eerst documenten toe aan een vak</button>.</div>`;
+  const sel = S.sel[key]; const groups = {};
+  for (const d of S.docs) (groups[d.vak_id || ''] = groups[d.vak_id || ''] || []).push(d);
+  const order = Object.keys(groups).sort((a, b) => vakNaam(a || null).localeCompare(vakNaam(b || null)));
+  return `<div class="picker"><div class="row between"><span class="label">${hint || 'Kies je stof'}</span><span class="small muted">${sel.size ? plural(sel.size, 'document', 'documenten') + ' gekozen' : ''}</span></div>
+  ${order.map(v => `<div class="row" style="align-items:flex-start"><button class="link small row" style="gap:6px;min-width:120px;text-align:left;text-decoration:none" data-act="pickvak" data-key="${key}" data-vak="${v}"><span class="vakdot" style="--vc:${vakColor(v || null)}"></span>${esc(vakNaam(v || null))}</button><div class="chips" style="flex:1">${groups[v].map(d => `<button class="chip" data-act="pick" data-key="${key}" data-id="${d.id}" aria-pressed="${sel.has(d.id)}" title="${esc(d.title)}">${esc(d.title)}</button>`).join('')}</div></div>`).join('')}</div>`;
+}
+const seg = (group, val, opts) => `<div class="seg" role="group">${opts.map(([k, l]) => `<button data-act="seg" data-group="${group}" data-val="${k}" aria-pressed="${String(val) === String(k)}">${l}</button>`).join('')}</div>`;
+const vakOptions = (sel, withNone = true) => `${withNone ? `<option value="">Zonder vak</option>` : ''}${S.vakken.map(v => `<option value="${v.id}" ${sel === v.id ? 'selected' : ''}>${esc(v.naam)}</option>`).join('')}`;
+function aiMeter() {
+  if (S.ai.unlimited) return `<span class="small muted">AI-tegoed: onbeperkt</span>`;
+  const left = Math.max(0, S.ai.limit - S.ai.used); const pct = S.ai.limit ? (left / S.ai.limit) * 100 : 0;
+  return `<div class="meter"><span class="small muted">AI-tegoed vandaag</span><div class="bar"><i style="width:${pct}%"></i></div><span class="mono small">${left}/${S.ai.limit}</span></div>`;
+}
+
+/* ---- Vandaag ---- */
+function vVandaag() {
+  const hr = new Date().getHours();
+  const greet = hr < 6 ? 'Goedenacht' : hr < 12 ? 'Goedemorgen' : hr < 18 ? 'Goedemiddag' : 'Goedenavond';
+  const first = (S.account.name || '').split(' ')[0];
+  const exams = S.exams.map(e => ({ ...e, days: daysUntil(e.datum) })).filter(e => e.days >= 0).sort((a, b) => a.days - b.days);
+  const due = dueCards(); const today = todayStr();
+  const tasks = []; S.exams.forEach(e => (e.plan || []).forEach((t, i) => { if (t.datum <= today && (!t.done || t.datum === today) && daysUntil(e.datum) >= 0) tasks.push({ e, t, i }); }));
+  const toetsen = S.results.filter(r => r.kind === 'toets');
+  const weak = {}; toetsen.slice(0, 5).forEach(r => (r.weak || []).forEach(t => weak[t] = (weak[t] || 0) + 1));
+  const weakList = Object.entries(weak).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
+  const recent = [...S.results.map(r => ({ ...r, k: 'Oefentoets' })), ...S.sessions.filter(s => s.cijfer != null).map(s => ({ ...s, k: 'Gesprek' }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 6);
+  let h = `<div class="stack"><div class="row between"><h2>${greet}${first ? ', ' + esc(first) : ''}</h2>${aiMeter()}</div>`;
+  if (!S.vakken.length && !S.docs.length) {
+    h += `<section class="panel"><h3>Zo werkt Leerpuls</h3><div class="steps">
+      <div><b>Maak je vakken aan</b><span class="muted small">Bijvoorbeeld Marketing, Bedrijfseconomie, Recht.</span></div>
+      <div><b>Voeg per vak je stof toe</b><span class="muted small">PDF, Word, tekst of foto's van je aantekeningen.</span></div>
+      <div><b>Oefen ermee</b><span class="muted small">Oefentoetsen met cijfer, flashcards, gesprekken en een leerplan tot je toets.</span></div></div>
+      <div><button class="btn" data-act="tab" data-tab="vakken">Eerste vak aanmaken</button></div></section>`;
+  }
+  h += `<div class="grid2">`;
+  if (tasks.length) h += `<section class="panel"><h3>Vandaag op je leerplan</h3><div class="plan">${tasks.map(({ e, t, i }) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span style="flex:1;display:grid;gap:2px"><span class="tt">${esc(t.taak)}</span><span class="small muted">${esc(e.naam)} · ${esc(vakNaam(e.vak_id))}${t.datum < today ? ' · ingehaald van ' + fmtDay(t.datum) : ''}</span></span></button>`).join('')}</div></section>`;
+  h += `<section class="panel"><div class="row between"><h3>Toetsplanner</h3><span class="label">${plural(exams.length, 'toets', 'toetsen')}</span></div>
+    ${exams.length ? `<div class="list">${exams.map(e => {
+      const done = (e.plan || []).filter(t => t.done).length, tot = (e.plan || []).length; const conf = S.confirm === 'exam:' + e.id;
+      return `<div class="item"><div class="main"><span class="t row" style="gap:8px"><span class="vakdot" style="--vc:${vakColor(e.vak_id)}"></span>${esc(e.naam)}</span><span class="small muted">${esc(vakNaam(e.vak_id))} · ${new Date(e.datum + 'T00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}${tot ? ` · leerplan ${done}/${tot}` : ''}</span></div>
+      <span class="pill ${e.days <= 3 ? 'bad' : e.days <= 10 ? 'warn' : ''}">${e.days === 0 ? 'vandaag' : e.days === 1 ? 'morgen' : 'nog ' + e.days + ' dagen'}</span>
+      ${conf ? `<button class="btn sm danger" data-act="examdel" data-id="${e.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
+      `<button class="btn sm" data-act="examquiz" data-vak="${e.vak_id || ''}">Oefen</button>${tot ? `<button class="btn sm ghost" data-act="planopen" data-id="${e.id}">${S.openPlan === e.id ? 'Sluit plan' : 'Leerplan'}</button>` : `<button class="btn sm ghost" data-act="planmake" data-id="${e.id}" ${S.busy ? 'disabled' : ''}>Maak leerplan</button>`}<button class="link small" data-act="confirm" data-key="exam:${e.id}">Verwijder</button>`}
+      ${S.openPlan === e.id && tot ? `<div class="plan" style="flex-basis:100%">${e.plan.map((t, i) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span class="tt" style="flex:1">${esc(t.taak)}</span><span class="d">${fmtDay(t.datum)}</span></button>`).join('')}<div><button class="link small" data-act="planmake" data-id="${e.id}">Maak een nieuw leerplan</button></div></div>` : ''}</div>`;
+    }).join('')}</div>` : `<p class="muted small">Zet je toetsen erin. Je ziet hoeveel dagen je nog hebt en Leerpuls maakt een leerplan per dag tot de toets.</p>`}
+    <div class="fields"><label class="field"><span>Vak</span><select id="exVak">${vakOptions(null)}</select></label><label class="field"><span>Toets</span><input id="exNaam" placeholder="bijv. Tentamen blok 2"></label><label class="field"><span>Datum</span><input id="exDatum" type="date" min="${todayStr()}"></label></div>
+    <div><button class="btn ghost" data-act="examadd">Toets toevoegen</button></div></section>`;
+  h += `<section class="panel"><h3>Herhalen</h3>${S.decks.length ? `<p>${due ? `<span class="mark"><b>${plural(due, 'kaart', 'kaarten')}</b></span> staan klaar om te herhalen.` : 'Alle kaarten zijn voor vandaag herhaald. Goed bezig.'}</p>
+    <div class="row">${due ? `<button class="btn hl" data-act="study" data-deck="">Start herhaling</button>` : ''}<button class="btn ghost" data-act="tab" data-tab="kaarten">Naar flashcards</button></div>` : `<p class="muted small">Maak flashcards van je stof. Leerpuls laat elke kaart terugkomen op het juiste moment, zodat je minder vergeet.</p><div><button class="btn ghost" data-act="tab" data-tab="kaarten">Flashcards maken</button></div>`}</section>`;
+  h += `<section class="panel"><h3>Laatste resultaten</h3>${recent.length ? `<div class="list">${recent.map(r => `<div class="item"><div class="main"><span class="t">${esc(r.title)}</span><span class="small muted">${r.k} · ${fmtDate(r.created_at)}</span></div><span class="grade ${vClass(r.cijfer)}">${fmtCijfer(r.cijfer)}</span></div>`).join('')}</div>` : `<p class="muted small">Hier verschijnen de cijfers van je oefentoetsen en gesprekken.</p>`}</section>`;
+  h += `<section class="panel"><h3>Waar je op moet letten</h3>${weakList.length ? `<p class="small muted">Onderwerpen waar je in je laatste toetsen punten liet liggen:</p><div class="chips">${weakList.map(t => `<span class="pill warn">${esc(t)}</span>`).join('')}</div><div><button class="btn" data-act="weakquiz">Oefentoets op deze onderwerpen</button></div>` : `<p class="muted small">Na een paar oefentoetsen zie je hier welke onderwerpen nog extra aandacht nodig hebben.</p>`}</section>`;
+  return h + `</div></div>`;
+}
+
+/* ---- Vakken ---- */
+function vVakken() {
+  if (S.openVak !== null) return vVak(S.openVak);
+  const now = Date.now();
+  let h = `<div class="stack"><div class="row between"><h2>Vakken</h2><span class="small muted">Je stof is alleen voor jou zichtbaar.</span></div>`;
+  h += `<section class="panel"><h3>Nieuw vak</h3><div class="row" style="align-items:flex-end"><label class="field" style="flex:1 1 220px"><span>Naam</span><input id="vakNaam" placeholder="bijv. Marketing" maxlength="60"></label>
+  <div class="field"><span>Kleur</span><div class="swatches">${[1, 2, 3, 4, 5, 6].map(k => `<button data-act="vakkleur" data-k="${k}" aria-pressed="${S.newVakKleur === String(k)}" style="--vc:var(--v${k})" aria-label="Kleur ${k}"></button>`).join('')}</div></div>
+  <button class="btn" data-act="vakadd">Vak toevoegen</button></div></section>`;
+  const cards = S.vakken.map(v => {
+    const docs = S.docs.filter(d => d.vak_id === v.id).length; const decks = S.decks.filter(d => d.vak_id === v.id);
+    const dueN = decks.reduce((s, d) => s + (d.cards || []).filter(c => (c.due || 0) <= now).length, 0);
+    const ex = S.exams.filter(e => e.vak_id === v.id && daysUntil(e.datum) >= 0).sort((a, b) => a.datum.localeCompare(b.datum))[0];
+    const rs = S.results.filter(r => r.vak_id === v.id).slice(0, 5); const avg = rs.length ? rs.reduce((s, r) => s + Number(r.cijfer), 0) / rs.length : null;
+    return `<button class="vakcard" data-act="vakopen" data-id="${v.id}" style="--vc:var(--v${v.kleur || 1})"><b>${esc(v.naam)}</b>
+      <span class="small muted">${plural(docs, 'document', 'documenten')} · ${plural(decks.length, 'kaartenset', 'kaartensets')}</span>
+      <span class="row" style="gap:6px">${ex ? `<span class="pill ${daysUntil(ex.datum) <= 7 ? 'warn' : ''}">${esc(ex.naam)}: ${daysUntil(ex.datum) === 0 ? 'vandaag' : 'nog ' + daysUntil(ex.datum) + ' d'}</span>` : ''}${avg != null ? `<span class="grade ${vClass(avg)}">gem. ${fmtCijfer(avg)}</span>` : ''}${dueN ? `<span class="pill">${dueN} kaarten klaar</span>` : ''}</span></button>`;
+  });
+  const loose = S.docs.filter(d => !d.vak_id).length;
+  if (loose) cards.push(`<button class="vakcard" data-act="vakopen" data-id="" style="--vc:var(--line)"><b>Zonder vak</b><span class="small muted">${plural(loose, 'document', 'documenten')}</span></button>`);
+  h += cards.length ? `<div class="vakgrid">${cards.join('')}</div>` : `<section class="panel"><p class="muted">Nog geen vakken. Maak hierboven je eerste vak aan, daarna voeg je per vak je documenten toe.</p></section>`;
+  return h + `</div>`;
+}
+function vVak(id) {
+  const v = vak(id || null); const docs = S.docs.filter(d => (d.vak_id || '') === (id || ''));
+  const conf = S.confirm === 'vak:' + id;
+  let h = `<div class="stack"><div class="row between"><div class="row"><button class="btn sm ghost" data-act="vakback">← Alle vakken</button><h2 class="row" style="gap:10px"><span class="vakdot" style="--vc:${v ? `var(--v${v.kleur || 1})` : 'var(--line)'};width:16px;height:16px"></span>${esc(v ? v.naam : 'Zonder vak')}</h2></div>
+  ${v ? (conf ? `<div class="row"><span class="small">Vak verwijderen? Documenten blijven bewaard onder "Zonder vak".</span><button class="btn sm danger" data-act="vakdel" data-id="${v.id}">Verwijder vak</button><button class="btn sm ghost" data-act="cancel">Annuleer</button></div>` : `<div class="row"><button class="link small" data-act="vakrename" data-id="${v.id}">Naam wijzigen</button><button class="link small" data-act="confirm" data-key="vak:${v.id}">Verwijder vak</button></div>`) : ''}</div>`;
+  if (S.confirm === 'rename:' + id) h += `<section class="panel"><div class="row" style="align-items:flex-end"><label class="field" style="flex:1"><span>Nieuwe naam</span><input id="vakRename" value="${esc(v.naam)}" maxlength="60"></label><button class="btn" data-act="vakrenamesave" data-id="${v.id}">Opslaan</button><button class="btn ghost" data-act="cancel">Annuleer</button></div></section>`;
+  if (docs.length) h += `<section class="panel"><span class="label">Oefenen met dit vak</span><div class="row">
+    <button class="btn" data-act="vakgo" data-to="toets" data-id="${id}">Oefentoets</button><button class="btn ghost" data-act="vakgo" data-to="kaarten" data-id="${id}">Flashcards maken</button>
+    <button class="btn ghost" data-act="vakgo" data-to="uitleg" data-id="${id}">Samenvatting &amp; vragen</button><button class="btn ghost" data-act="vakgo" data-to="gesprek" data-id="${id}">Mondeling oefenen</button></div></section>`;
+  h += `<section class="panel"><h3>Document toevoegen${v ? ' aan ' + esc(v.naam) : ''}</h3>
+  <label class="drop" id="drop"><input type="file" id="upFile" multiple accept=".pdf,.docx,.txt,.md,.csv,image/*"><b>Sleep bestanden hierheen of klik om te kiezen</b><span class="small muted">PDF, Word (.docx), tekst, of foto's van je aantekeningen (de AI leest ze voor je uit)</span></label>
+  <details><summary class="link" style="cursor:pointer">Of plak tekst</summary><div class="stack" style="margin-top:10px"><label class="field"><span>Titel</span><input id="upTitle" placeholder="bijv. College 4 aantekeningen"></label><textarea id="upText" placeholder="Plak hier je samenvatting, collegeaantekeningen of een hoofdstuk"></textarea><div><button class="btn" data-act="paste" data-vak="${id}">Tekst toevoegen</button></div></div></details></section>`;
+  h += `<section class="panel"><div class="row between"><h3>Documenten</h3><span class="label">${docs.length}</span></div>${docs.length ? `<div class="list">${docs.map(d => docItem(d)).join('')}</div>` : `<p class="muted small">Nog geen documenten in dit vak.</p>`}</section>`;
+  return h + `</div>`;
+}
+function docItem(d) {
+  const conf = S.confirm === 'doc:' + d.id; const open = S.openDoc === d.id;
+  return `<div class="item"><div class="main"><span class="t">${esc(d.title)}</span><span class="small muted mono">${(d.chars || 0).toLocaleString('nl-NL')} tekens · ${esc(d.source || '')} · ${fmtDate(d.created_at)}</span></div>
+  ${conf ? `<span class="small">Verwijderen?</span><button class="btn sm danger" data-act="docdel" data-id="${d.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
+  `<button class="btn sm ghost" data-act="docview" data-id="${d.id}">${open ? 'Sluit' : 'Bekijk'}</button>${d.file_path ? `<button class="btn sm ghost" data-act="docfile" data-id="${d.id}">Origineel</button>` : ''}<button class="btn sm ghost" data-act="ask" data-id="${d.id}">Vraag erover</button>
+  <select class="small" style="width:auto" data-move="${d.id}" aria-label="Verplaats naar vak">${vakOptions(d.vak_id)}</select><button class="link small" data-act="confirm" data-key="doc:${d.id}">Verwijder</button>`}
+  ${open ? `<div class="preview">${d.summary ? `<div class="md" style="white-space:normal;margin-bottom:12px"><span class="label">Samenvatting</span>${md(d.summary)}</div>` : ''}${S.texts[d.id] == null ? 'Laden…' : esc(S.texts[d.id].slice(0, 6000)) + (S.texts[d.id].length > 6000 ? '\n…' : '')}</div>` : ''}</div>`;
+}
+
+/* ---- Oefentoets ---- */
+function vToets() {
+  const qz = S.quiz;
+  if (qz.phase === 'run') {
+    const cur = qz.qs[qz.i]; const a = qz.answers[qz.i];
+    let h = `<div class="stack"><div class="row between"><h2>${esc(qz.title)}</h2><button class="btn sm ghost" data-act="quizstop">Stoppen</button></div>
+    <section class="panel"><div class="row between"><span class="label">Vraag ${qz.i + 1} van ${qz.qs.length}</span><span class="pill">${esc(cur.topic || '')}</span></div><div class="bar"><i style="width:${(qz.i / qz.qs.length) * 100}%"></i></div><p class="q">${esc(cur.question)}</p>`;
+    if (cur.type === 'mc') {
+      h += `<div class="opts">${cur.options.map((o, k) => { let c = ''; if (a != null) { if (k === cur.answer) c = 'right'; else if (k === a) c = 'wrong'; } return `<button class="opt ${c}" data-act="mc" data-k="${k}" ${a != null ? 'disabled' : ''}><span class="k">${'ABCDEF'[k]}</span><span>${esc(o)}</span></button>`; }).join('')}</div>`;
+      if (a != null) h += `<div class="fb ${a === cur.answer ? 'good' : 'bad'}"><span><b>${a === cur.answer ? 'Goed!' : 'Helaas.'}</b> ${esc(cur.explanation || '')}</span></div><div><button class="btn" data-act="quiznext">${qz.i + 1 < qz.qs.length ? 'Volgende vraag' : 'Bekijk je cijfer'}</button></div>`;
+    } else {
+      h += `<textarea id="openAns" placeholder="Typ je antwoord in je eigen woorden"></textarea><div class="row"><button class="btn" data-act="openans">${qz.i + 1 < qz.qs.length ? 'Antwoord vastleggen' : 'Afronden en nakijken'}</button><button class="btn ghost" data-act="openskip">Weet ik niet</button></div><p class="small muted">Open vragen worden aan het eind nagekeken.</p>`;
+    }
+    return h + `</section></div>`;
+  }
+  if (qz.phase === 'done') {
+    const c = qz.cijfer;
+    let h = `<div class="stack"><h2>${esc(qz.title)}</h2><section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(c)}">${fmtCijfer(c)}</span><div class="stack" style="gap:4px"><b>${c >= 5.5 ? 'Voldoende' : 'Onvoldoende'}</b><span class="muted mono small">${String(qz.pts).replace('.', ',')} van ${qz.qs.length} punten</span></div></div>
+    ${qz.weak.length ? `<div class="row"><span class="small">Extra aandacht:</span>${qz.weak.map(t => `<span class="pill warn">${esc(t)}</span>`).join('')}</div>` : ''}
+    <div class="row"><button class="btn" data-act="quiznew">Nieuwe toets</button>${qz.weak.length ? `<button class="btn ghost" data-act="quizweak">Oefen zwakke onderwerpen</button>` : ''}${qz.wrong.length ? `<button class="btn ghost" data-act="quizcards">Maak flashcards van je fouten</button>` : ''}</div></section>
+    <section class="panel"><h3>Nakijken</h3><div class="stack">${qz.qs.map((x, k) => { const g = qz.grades[k];
+      return `<div class="fb ${g.score === 1 ? 'good' : g.score > 0 ? 'half' : 'bad'}"><div class="row between"><b>${k + 1}. ${esc(x.question)}</b><span class="mono small">${String(g.score).replace('.', ',')} pt</span></div>
+      ${x.type === 'mc' ? `<p class="small">Jouw antwoord: ${qz.answers[k] != null ? esc(x.options[qz.answers[k]]) : '—'}${qz.answers[k] !== x.answer ? ` · Juist: <b>${esc(x.options[x.answer])}</b>` : ''}</p>` : `<p class="small">Jouw antwoord: ${esc(qz.answers[k] || '—')}</p><p class="small"><b>Feedback:</b> ${esc(g.feedback || '')}</p><p class="small muted">Modelantwoord: ${esc(x.modelAnswer || '')}</p>`}</div>`; }).join('')}</div></section></div>`;
+    return h;
+  }
+  const can = S.sel.quiz.size && !S.busy; const past = S.results.filter(r => r.kind === 'toets');
+  return `<div class="stack"><div class="row between"><h2>Oefentoets</h2>${aiMeter()}</div><section class="panel">${picker('quiz')}
+  <div class="fields"><div class="field"><span>Aantal vragen</span>${seg('quiz.n', qz.n, [[5, '5'], [10, '10'], [15, '15'], [20, '20']])}</div>
+  <div class="field"><span>Soort</span>${seg('quiz.soort', qz.soort, [['mix', 'Gemengd'], ['mc', 'Meerkeuze'], ['open', 'Open']])}</div>
+  <div class="field"><span>Niveau</span>${seg('quiz.niveau', qz.niveau, [['basis', 'Basis'], ['toets', 'Toetsniveau'], ['pittig', 'Pittig']])}</div></div>
+  <label class="field"><span>Focus (optioneel)</span><input id="quizFocus" placeholder="bijv. DESTEP en prijsstrategieën"></label>
+  <div><button class="btn" data-act="quizgo" ${can ? '' : 'disabled'}>Maak oefentoets</button></div></section>
+  ${past.length ? `<section class="panel"><h3>Eerdere toetsen</h3><div class="list">${past.slice(0, 12).map(r => `<div class="item"><div class="main"><span class="t">${esc(r.title)}</span><span class="small muted">${esc(vakNaam(r.vak_id))} · ${fmtDate(r.created_at)} · ${r.total} vragen</span></div><span class="grade ${vClass(r.cijfer)}">${fmtCijfer(r.cijfer)}</span></div>`).join('')}</div></section>` : ''}</div>`;
+}
+
+/* ---- Flashcards ---- */
+function vKaarten() {
+  const st = S.study;
+  if (st) {
+    if (st.i >= st.queue.length) return `<div class="stack"><h2>Herhaling klaar</h2><section class="panel"><p><span class="mark"><b>${st.known}</b> gewist</span> en <b>${st.unknown}</b> keer nog niet. Kaarten die je niet wist komen morgen terug in bakje 1.</p><div class="row"><button class="btn" data-act="studyend">Klaar</button></div></section></div>`;
+    const it = st.queue[st.i]; const deck = S.decks.find(d => d.id === it.deckId); const card = deck && (deck.cards || []).find(c => c.id === it.cardId);
+    if (!card) { st.i++; return vKaarten(); }
+    return `<div class="stack"><div class="row between"><h2>${esc(deck.title)}</h2><button class="btn sm ghost" data-act="studyend">Stoppen</button></div><div class="bar"><i style="width:${(st.i / st.queue.length) * 100}%"></i></div>
+    <div class="cardwrap"><div class="icard ${st.flipped ? 'back' : ''}" data-act="flip" role="button" tabindex="0" aria-label="Draai de kaart om"><span class="side">${st.flipped ? 'Achterkant' : 'Voorkant'} · kaart ${st.i + 1} van ${st.queue.length}</span><span class="txt">${esc(st.flipped ? card.back : card.front)}</span></div>
+    <div class="row"><span class="small muted">Bakje</span><span class="boxes" aria-label="Bakje ${card.box} van 5">${[1, 2, 3, 4, 5].map(b => `<i class="${b <= card.box ? 'on' : ''}"></i>`).join('')}</span></div>
+    ${st.flipped ? `<div class="row"><button class="btn ghost" data-act="know" data-v="0">Wist ik niet</button><button class="btn hl" data-act="know" data-v="1">Wist ik</button></div>` : `<button class="btn" data-act="flip">Draai om</button>`}<p class="small muted">Sneltoetsen: spatie = omdraaien, 1 = wist ik niet, 2 = wist ik</p></div></div>`;
+  }
+  const can = S.sel.cards.size && !S.busy; const now = Date.now();
+  return `<div class="stack"><div class="row between"><h2>Flashcards</h2>${aiMeter()}</div>
+  ${S.decks.length ? `<section class="panel"><div class="row between"><h3>Je sets</h3>${dueCards() ? `<button class="btn hl sm" data-act="study" data-deck="">Herhaal alles wat klaarstaat (${dueCards()})</button>` : ''}</div><div class="list">${S.decks.map(d => {
+    const cards = d.cards || []; const due = cards.filter(c => (c.due || 0) <= now).length; const mastered = cards.filter(c => c.box >= 4).length; const conf = S.confirm === 'deck:' + d.id;
+    return `<div class="item"><div class="main"><span class="t row" style="gap:8px"><span class="vakdot" style="--vc:${vakColor(d.vak_id)}"></span>${esc(d.title)}</span><span class="small muted">${esc(vakNaam(d.vak_id))} · ${cards.length} kaarten · ${mastered} goed in je hoofd</span></div>${due ? `<span class="pill warn">${due} klaar</span>` : `<span class="pill good">bij</span>`}
+    ${conf ? `<button class="btn sm danger" data-act="deckdel" data-id="${d.id}">Verwijder set</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm" data-act="study" data-deck="${d.id}" ${due ? '' : 'data-all="1"'}>${due ? 'Oefen' : 'Alles oefenen'}</button><button class="link small" data-act="confirm" data-key="deck:${d.id}">Verwijder</button>`}</div>`;
+  }).join('')}</div></section>` : ''}
+  <section class="panel"><h3>Nieuwe set maken</h3>${picker('cards')}<div class="field"><span>Aantal kaarten</span>${seg('cards.n', S.cardsSet.n, [[10, '10'], [15, '15'], [25, '25'], [40, '40']])}</div>
+  <div><button class="btn" data-act="cardsgo" ${can ? '' : 'disabled'}>Maak flashcards</button></div><p class="small muted">Je oefent volgens het bakjessysteem: wist je een kaart, dan schuift hij een bakje op en zie je hem later pas terug.</p></section></div>`;
+}
+
+/* ---- Gesprek ---- */
+const SCEN = {
+  mondeling: { t: 'Mondeling tentamen', d: 'Een examinator ondervraagt je over je stof.' },
+  sollicitatie: { t: 'Sollicitatiegesprek', d: 'Voor een bijbaan, stage of eerste baan.' },
+  presentatie: { t: 'Vragen na presentatie', d: 'Een docent of jury stelt kritische vragen.' },
+  stage: { t: 'Stage- of beoordelingsgesprek', d: 'Met je stagebegeleider of praktijkbegeleider.' },
+  eigen: { t: 'Eigen situatie', d: 'Beschrijf zelf het gesprek dat je wilt oefenen.' }
+};
+function vGesprek() {
+  const c = S.chat;
+  if (c.phase === 'run' || c.phase === 'feedback') {
+    let h = `<div class="stack"><div class="row between"><h2>${esc(c.title)}</h2><button class="btn sm ghost" data-act="chatnew">Nieuw gesprek</button></div><section class="panel"><div class="chat" id="chatBox">`;
+    c.msgs.forEach((m, k) => {
+      if (k === 0 && m.role === 'user') return;
+      h += `<div class="msg ${m.role === 'assistant' ? 'ai' : 'me'}"><div class="who-l">${m.role === 'assistant' ? esc(c.rol) : 'Jij'}</div>${esc(m.content)}</div>`;
+      if (c.tips[k]) h += `<div class="msg tip"><b>Tip:</b> ${esc(c.tips[k])}</div>`;
+    });
+    if (c.streaming != null) h += `<div class="msg ai"><div class="who-l">${esc(c.rol)}</div><span id="streamOut">${esc(c.streaming || '…')}</span></div>`;
+    h += `</div>`;
+    const lock = S.busy || c.streaming != null;
+    if (c.phase === 'run') h += `<label class="field"><span>Jouw antwoord</span><textarea id="chatIn" placeholder="Antwoord zoals je het in het echt zou zeggen. Enter = versturen, Shift+Enter = nieuwe regel"></textarea></label>
+      <div class="row"><button class="btn" data-act="chatsend" ${lock ? 'disabled' : ''}>Verstuur</button><button class="btn ghost" data-act="chattip" ${lock ? 'disabled' : ''}>Geef een tip</button><button class="btn hl" data-act="chatend" ${lock || c.msgs.length < 4 ? 'disabled' : ''}>Rond af en krijg feedback</button></div>`;
+    h += `</section>`;
+    if (c.phase === 'feedback' && c.feedback) {
+      const f = c.feedback;
+      h += `<section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(f.cijfer)}">${fmtCijfer(f.cijfer)}</span><p style="flex:1 1 240px">${esc(f.samenvatting)}</p></div>
+      <div class="grid2"><div class="stack" style="gap:6px"><span class="label">Wat ging goed</span><ul class="md">${(f.sterk || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div><div class="stack" style="gap:6px"><span class="label">Wat kan beter</span><ul class="md">${(f.beter || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>
+      ${f.voorbeeld && f.voorbeeld.vraag ? `<div class="fb good"><span class="label">Voorbeeldantwoord</span><p><b>${esc(f.voorbeeld.vraag)}</b></p><p>${esc(f.voorbeeld.antwoord)}</p></div>` : ''}
+      <div class="row"><button class="btn" data-act="chatagain">Zelfde gesprek opnieuw</button><button class="btn ghost" data-act="chatnew">Ander gesprek</button></div></section>`;
+    }
+    return h + `</div>`;
+  }
+  const s = c.scenario; let extra = '';
+  if (s === 'mondeling') extra = picker('chat', 'Over welke stof gaat het mondeling?');
+  if (s === 'sollicitatie') extra = `<div class="fields"><label class="field"><span>Functie</span><input id="chFunctie" placeholder="bijv. Stagiair marketing"></label><label class="field"><span>Organisatie (optioneel)</span><input id="chOrg" placeholder="bijv. een webbureau in Leiden"></label></div>${S.docs.length ? picker('chat', 'Vacature of cv uit je stof (optioneel)') : ''}`;
+  if (s === 'presentatie') extra = `<label class="field"><span>Onderwerp van je presentatie</span><input id="chOnderwerp" placeholder="bijv. Marketingplan voor een lokale bakkerij"></label>${S.docs.length ? picker('chat', 'Bijbehorende stof (optioneel)') : ''}`;
+  if (s === 'stage') extra = `<label class="field"><span>Situatie</span><input id="chStage" placeholder="bijv. Tussentijdse evaluatie na 10 weken stage"></label>`;
+  if (s === 'eigen') extra = `<label class="field"><span>Beschrijf het gesprek</span><textarea id="chEigen" placeholder="Wie is je gesprekspartner, waar gaat het over en wat wil je bereiken?"></textarea></label>`;
+  const can = !S.busy && (s !== 'mondeling' || S.sel.chat.size);
+  return `<div class="stack"><div class="row between"><h2>Gesprek oefenen</h2>${aiMeter()}</div><section class="panel"><span class="label">Welk gesprek?</span>
+  <div class="scen">${Object.entries(SCEN).map(([k, v]) => `<button data-act="seg" data-group="chat.scenario" data-val="${k}" aria-pressed="${s === k}"><b>${v.t}</b><span class="small muted">${v.d}</span></button>`).join('')}</div>
+  ${extra}
+  <div class="fields"><div class="field"><span>Gesprekspartner</span>${seg('chat.toon', c.toon, [['vriendelijk', 'Vriendelijk'], ['neutraal', 'Neutraal'], ['streng', 'Kritisch']])}</div>
+  <div class="field"><span>Lengte</span>${seg('chat.lengte', c.lengte, [['kort', 'Kort'], ['normaal', 'Normaal'], ['lang', 'Lang']])}</div></div>
+  <div><button class="btn" data-act="chatgo" ${can ? '' : 'disabled'}>Start gesprek</button></div></section>
+  ${S.sessions.length ? `<section class="panel"><h3>Eerdere gesprekken</h3><div class="list">${S.sessions.slice(0, 10).map(x => `<div class="item"><div class="main"><span class="t">${esc(x.title)}</span><span class="small muted">${fmtDate(x.created_at)}${x.feedback && x.feedback.beter && x.feedback.beter[0] ? ' · ' + esc(x.feedback.beter[0]) : ''}</span></div>${x.cijfer != null ? `<span class="grade ${vClass(x.cijfer)}">${fmtCijfer(x.cijfer)}</span>` : ''}</div>`).join('')}</div></section>` : ''}</div>`;
+}
+
+/* ---- Uitleg ---- */
+function vUitleg() {
+  const qa = S.qa; const can = S.sel.qa.size && !S.busy;
+  let h = `<div class="stack"><div class="row between"><h2>Uitleg &amp; vragen</h2>${aiMeter()}</div><section class="panel">${picker('qa')}
+  <div class="row"><button class="btn" data-act="sum" data-kind="sam" ${can ? '' : 'disabled'}>Maak samenvatting</button><button class="btn ghost" data-act="sum" data-kind="beg" ${can ? '' : 'disabled'}>Begrippenlijst</button><button class="btn ghost" data-act="sum" data-kind="simpel" ${can ? '' : 'disabled'}>Leg het eenvoudig uit</button>${qa.out && !S.busy ? `<button class="btn ghost" data-act="sumdl">Download als tekst</button>` : ''}</div>
+  ${qa.out ? `<div class="preview md" style="white-space:normal;max-height:none" id="sumOut">${md(qa.out)}</div>` : ''}</section>
+  <section class="panel"><h3>Stel een vraag over je stof</h3>`;
+  if (qa.msgs.length || qa.streaming != null) h += `<div class="chat" id="chatBox">${qa.msgs.map(m => `<div class="msg ${m.role === 'assistant' ? 'ai' : 'me'}"><div class="who-l">${m.role === 'assistant' ? 'Leerpuls' : 'Jij'}</div>${m.role === 'assistant' ? `<div class="md" style="white-space:normal">${md(m.content)}</div>` : esc(m.content)}</div>`).join('')}
+    ${qa.streaming != null ? `<div class="msg ai"><div class="who-l">Leerpuls</div><span id="streamOut">${esc(qa.streaming || '…')}</span></div>` : ''}</div>`;
+  h += `<textarea id="qaIn" placeholder="bijv. Wat is het verschil tussen penetratieprijs en afroomprijs?"></textarea><div class="row"><button class="btn" data-act="qasend" ${can && qa.streaming == null ? '' : 'disabled'}>Vraag</button>${qa.msgs.length ? `<button class="btn ghost" data-act="qaclear">Nieuw gesprek</button>` : ''}</div></section></div>`;
+  return h;
+}
+
+/* ---- Beheer ---- */
+function vBeheer() {
+  if (!S.isAdmin) return '';
+  const A = S.admin; const rows = A.rows;
+  if (!rows) { loadAdmin(); return `<div class="stack"><h2>Beheer</h2><section class="panel"><p class="muted">Accounts laden…</p></section></div>`; }
+  const today = rows.reduce((s, r) => s + (r.ai_vandaag || 0), 0), week = rows.reduce((s, r) => s + Number(r.ai_week || 0), 0);
+  const actief7 = rows.filter(r => r.laatst_actief && daysUntil(r.laatst_actief) >= -7).length;
+  const filter = (A.filter || '').toLowerCase();
+  const shown = rows.filter(r => !filter || [r.email, r.name, r.groep].join(' ').toLowerCase().includes(filter));
+  return `<div class="stack"><div class="row between"><h2>Beheer</h2><button class="btn sm ghost" data-act="adminreload">Vernieuwen</button></div>
+  <section class="panel"><div class="fields">
+    <div class="stack" style="gap:2px"><span class="label">Accounts</span><span class="cijfer" style="font-size:2rem">${rows.length}</span></div>
+    <div class="stack" style="gap:2px"><span class="label">Actief laatste 7 dagen</span><span class="cijfer" style="font-size:2rem">${actief7}</span></div>
+    <div class="stack" style="gap:2px"><span class="label">AI-acties vandaag</span><span class="cijfer" style="font-size:2rem">${today}</span></div>
+    <div class="stack" style="gap:2px"><span class="label">AI-acties 7 dagen</span><span class="cijfer" style="font-size:2rem">${week}</span></div></div>
+    <p class="small muted">Je ziet alleen aantallen per student, nooit hun documenten, antwoorden of gesprekken.</p></section>
+  <section class="panel"><div class="row between"><h3>Account toevoegen</h3><button class="link small" data-act="adminbulk">${A.bulk ? 'Eén account toevoegen' : 'Meerdere tegelijk toevoegen'}</button></div>
+  ${A.bulk ? `<label class="field"><span>Eén per regel: e-mailadres, of naam;e-mailadres</span><textarea id="adBulk" placeholder="Sanne de Vries;sanne@student.nl&#10;tim@student.nl"></textarea></label>`
+    : `<div class="fields"><label class="field"><span>E-mailadres</span><input id="adEmail" type="email" placeholder="naam@student.nl"></label><label class="field"><span>Naam</span><input id="adName" placeholder="Voor- en achternaam"></label></div>`}
+  <div class="fields"><div class="field"><span>Rol</span>${seg('admin.newRole', A.newRole, [['student', 'Student'], ['admin', 'Beheerder']])}</div>
+  <label class="field"><span>Groep of klas (optioneel)</span><input id="adGroep" placeholder="bijv. CE1A"></label>
+  <label class="field"><span>AI-acties per dag</span><input id="adLimit" type="number" min="0" max="10000" value="60"></label></div>
+  <label class="row small" style="gap:8px"><input type="checkbox" id="adMail" checked> Stuur een welkomstmail met uitleg hoe je inlogt</label>
+  <div><button class="btn" data-act="admincreate" ${S.busy ? 'disabled' : ''}>${A.bulk ? 'Accounts toevoegen' : 'Account toevoegen'}</button></div></section>
+  <section class="panel"><div class="row between"><h3>Accounts</h3><input id="adFilter" placeholder="Zoek op naam, e-mail of groep" style="max-width:280px" value="${esc(A.filter || '')}" data-filter="1"></div>
+  <div class="tablewrap"><table><thead><tr><th>Naam</th><th>Rol</th><th>Groep</th><th>Status</th><th>Laatst actief</th><th>Docs</th><th>Gem. cijfer</th><th>AI vandaag</th><th>Limiet</th><th></th></tr></thead><tbody>
+  ${shown.map(r => { const own = r.email === OWNER; const conf = S.confirm === 'acc:' + r.email;
+    return `<tr><td><b>${esc(r.name || '—')}</b><br><span class="small muted mono">${esc(r.email)}</span></td><td>${r.role === 'admin' ? (own ? 'Hoofdbeheerder' : 'Beheerder') : 'Student'}</td><td>${esc(r.groep || '')}</td>
+    <td>${r.active ? `<span class="pill good">actief</span>` : `<span class="pill bad">gepauzeerd</span>`}${!r.last_login ? ` <span class="pill">nooit ingelogd</span>` : ''}</td>
+    <td class="small">${r.laatst_actief ? fmtDay(r.laatst_actief) : (r.last_login ? fmtDate(r.last_login) : '—')}</td><td class="num">${r.docs}</td><td class="num">${r.gem_cijfer != null ? fmtCijfer(r.gem_cijfer) : '—'}</td><td class="num">${r.ai_vandaag}</td>
+    <td><input type="number" min="0" max="10000" value="${r.daily_ai_limit}" style="width:80px" data-limit="${esc(r.email)}" aria-label="AI-limiet ${esc(r.email)}"></td>
+    <td style="white-space:nowrap">${own ? '' : conf ? `<button class="btn sm danger" data-act="admindel" data-email="${esc(r.email)}">Definitief verwijderen</button> <button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
+      `<button class="btn sm ghost" data-act="admintoggle" data-email="${esc(r.email)}">${r.active ? 'Pauzeer' : 'Activeer'}</button> <button class="btn sm ghost" data-act="adminrole" data-email="${esc(r.email)}">${r.role === 'admin' ? 'Maak student' : 'Maak beheerder'}</button> <button class="link small" data-act="confirm" data-key="acc:${esc(r.email)}">Verwijder</button>`}</td></tr>`; }).join('')}
+  </tbody></table></div><p class="small muted">Verwijderen wist ook alle stof, flashcards en resultaten van die student. Pauzeren blokkeert inloggen en AI, maar bewaart alles.</p></section></div>`;
+}
+
+/* ---- Account ---- */
+function vAccount() {
+  const a = S.account; const pwSet = (S.user.user_metadata || {}).password_set;
+  return `<div class="stack"><h2>Account</h2><div class="grid2">
+  <section class="panel"><h3>Je gegevens</h3><label class="field"><span>Naam</span><input id="acName" value="${esc(a.name || '')}" maxlength="80"></label><p class="small muted">E-mailadres: <span class="mono">${esc(a.email)}</span>${a.groep ? ` · Groep: ${esc(a.groep)}` : ''}</p><div><button class="btn ghost" data-act="acname">Naam opslaan</button></div></section>
+  <section class="panel"><h3>${pwSet ? 'Wachtwoord wijzigen' : 'Wachtwoord instellen'}</h3><p class="small muted">${pwSet ? 'Je kunt inloggen met je wachtwoord of met een code per mail.' : 'Je logt nu in met een code per mail. Met een wachtwoord gaat het sneller.'}</p>
+  <form id="fAcctPw" class="stack"><label class="field"><span>Nieuw wachtwoord (minimaal 8 tekens)</span><input id="acPw" type="password" autocomplete="new-password" minlength="8" required></label><label class="field"><span>Herhaal wachtwoord</span><input id="acPw2" type="password" autocomplete="new-password" minlength="8" required></label><div><button class="btn">Opslaan</button></div></form></section>
+  <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw.</p></section>
+  <section class="panel"><h3>Privacy</h3><p class="small muted">Je stof, antwoorden en gesprekken zijn alleen voor jou zichtbaar. Beheerders zien alleen aantallen.</p><div class="row"><button class="btn ghost" data-act="export">Download al mijn gegevens</button><button class="btn" data-act="logout">Uitloggen</button></div></section>
+  </div></div>`;
+}
+
+/* ================= render ================= */
+let scrollChat = false;
+function render() {
+  const root = $('#app'); if (root.hidden) return;
+  const keep = {};
+  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  const act = document.activeElement; const fid = act && root.contains(act) && act.id;
+  let ss, se; try { ss = act.selectionStart; se = act.selectionEnd; } catch {}
+  const openDetails = [...root.querySelectorAll('details')].map(d => d.open);
+  root.innerHTML = view();
+  for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (!el || el.dataset.filter) continue; if (el.type === 'checkbox') el.checked = v; else el.value = v; }
+  root.querySelectorAll('details').forEach((d, i) => { if (openDetails[i]) d.open = true; });
+  if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); try { if (ss != null) el.setSelectionRange(ss, se); } catch {} } }
+  const box = $('#chatBox'); if (box && scrollChat) box.scrollTop = box.scrollHeight;
+  bindDrop();
+}
+function bindDrop() {
+  const d = $('#drop'); if (!d || d.dataset.b) return; d.dataset.b = 1;
+  const f = $('#upFile'); const vakId = S.openVak || null;
+  f.addEventListener('change', () => { if (f.files.length) handleFiles([...f.files], vakId, ($('#upTitle') || {}).value); f.value = ''; });
+  ['dragenter', 'dragover'].forEach(e => d.addEventListener(e, ev => { ev.preventDefault(); d.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(e => d.addEventListener(e, ev => { ev.preventDefault(); d.classList.remove('over'); }));
+  d.addEventListener('drop', ev => { if (ev.dataTransfer.files.length) handleFiles([...ev.dataTransfer.files], vakId, ($('#upTitle') || {}).value); });
+}
+function streamTo(obj) {
+  return text => { obj.streaming = text; const el = $('#streamOut'); if (el) { el.textContent = text; const b = $('#chatBox'); if (b) b.scrollTop = b.scrollHeight; } else render(); };
+}
+
+/* ================= oefentoets ================= */
+async function startQuiz(ids, focus) {
+  const qz = S.quiz; const n = +qz.n;
+  const soort = { mix: 'een mix van ongeveer 70% meerkeuzevragen en 30% open vragen', mc: 'alleen meerkeuzevragen', open: 'alleen open vragen' }[qz.soort];
+  const niveau = { basis: 'basis: kennis en begrip', toets: 'zoals een echte hbo-toets: begrip en toepassen in een situatie', pittig: 'pittig: toepassen, analyseren en verbanden leggen met casussen' }[qz.niveau];
+  setBusy('Je oefentoets wordt gemaakt…');
+  try {
+    const stof = await material(ids);
+    const r = await aiJson({ kind: 'toets', prompt: `Je bent een ervaren docent in het Nederlandse hoger onderwijs. Maak een oefentoets van ${n} vragen in het Nederlands, uitsluitend gebaseerd op de studiestof hieronder.
+Soort vragen: ${soort}. Niveau: ${niveau}.${focus ? ' Leg de nadruk op: ' + focus + '.' : ''}
+Regels: toets begrip en toepassing, niet alleen losse feitjes. Meerkeuzevragen hebben precies 4 opties met 1 juist antwoord en geloofwaardige afleiders; wissel de positie van het juiste antwoord af. Geef elke vraag een kort onderwerp (2-4 woorden).
+Antwoord met alleen JSON in deze vorm:
+{"title":"korte titel van deze toets","questions":[{"type":"mc","question":"...","options":["...","...","...","..."],"answer":2,"explanation":"waarom dit juist is","topic":"..."},{"type":"open","question":"...","modelAnswer":"kern van een goed antwoord","topic":"..."}]}
+"answer" is de index (0-3) van de juiste optie.
+
+STUDIESTOF:
+${stof}` });
+    const qs = (r && r.questions || []).filter(x => x && x.question && ((x.type === 'mc' && Array.isArray(x.options) && x.options.length >= 2 && Number.isInteger(x.answer) && x.answer < x.options.length) || x.type === 'open'));
+    if (!qs.length) throw { code: 'invalid_json' };
+    Object.assign(qz, { phase: 'run', qs, i: 0, answers: [], docIds: [...ids], vakId: commonVak(ids), title: String(r.title || 'Oefentoets').slice(0, 80) });
+  } catch (e) { aiErr(e); }
+  finally { setBusy(null); }
+}
+async function finishQuiz() {
+  const qz = S.quiz;
+  const grades = qz.qs.map((x, k) => x.type === 'mc' ? { score: qz.answers[k] === x.answer ? 1 : 0 } : null);
+  const open = qz.qs.map((x, k) => ({ x, k })).filter(o => o.x.type === 'open');
+  const toGrade = open.filter(o => (qz.answers[o.k] || '').trim());
+  open.filter(o => !(qz.answers[o.k] || '').trim()).forEach(o => grades[o.k] = { score: 0, feedback: 'Geen antwoord gegeven.' });
+  if (toGrade.length) {
+    setBusy('Je open antwoorden worden nagekeken…');
+    try {
+      const r = await aiJson({ kind: 'nakijken', prompt: `Beoordeel deze open antwoorden van een hbo-student, eerlijk maar niet te streng, op basis van het modelantwoord. Geef per vraag score 0, 0.5 of 1 en korte feedback in 1-2 zinnen (spreek de student aan met "je").
+Antwoord met alleen JSON: {"grades":[{"score":1,"feedback":"..."}]}, in dezelfde volgorde als de vragen.
+
+${toGrade.map((o, i) => `${i + 1}. Vraag: ${o.x.question}\nModelantwoord: ${o.x.modelAnswer || ''}\nAntwoord student: ${qz.answers[o.k]}`).join('\n\n')}` });
+      toGrade.forEach((o, i) => { const g = r && r.grades && r.grades[i]; grades[o.k] = { score: g ? Math.max(0, Math.min(1, Math.round((+g.score || 0) * 2) / 2)) : 0, feedback: (g && g.feedback) || '' }; });
+    } catch (e) { aiErr(e); toGrade.forEach(o => grades[o.k] = grades[o.k] || { score: 0, feedback: 'Nakijken lukte niet; vergelijk zelf met het modelantwoord.' }); }
+    finally { setBusy(null); }
+  }
+  const pts = grades.reduce((s, g) => s + g.score, 0);
+  const cijfer = Math.round((1 + 9 * pts / qz.qs.length) * 10) / 10;
+  const weak = [...new Set(qz.qs.filter((x, k) => grades[k].score < 1 && x.topic).map(x => x.topic))].slice(0, 6);
+  const wrong = qz.qs.map((x, k) => ({ x, k })).filter(o => grades[o.k].score < 1);
+  Object.assign(qz, { phase: 'done', grades, pts, cijfer, weak, wrong });
+  render(); markStudy();
+  try { const row = await q(sb.from('results').insert({ kind: 'toets', vak_id: qz.vakId, title: qz.title, pts, total: qz.qs.length, cijfer, weak }).select().single()); S.results.unshift(row); } catch (e) { dbErr(e); }
+}
+
+/* ================= flashcards ================= */
+const BOXDAYS = [0, 1, 2, 4, 8, 16];
+async function makeDeck(ids) {
+  const n = +S.cardsSet.n;
+  setBusy('Je flashcards worden gemaakt…');
+  try {
+    const r = await aiJson({ kind: 'flashcards', prompt: `Maak ${n} flashcards in het Nederlands op basis van de studiestof hieronder. Voorkant: een begrip of korte vraag. Achterkant: een kort en volledig antwoord (maximaal 2 zinnen). Dek de belangrijkste begrippen, modellen en verbanden; geen dubbelingen.
+Antwoord met alleen JSON: {"title":"korte naam voor deze set","cards":[{"front":"...","back":"..."}]}
+
+STUDIESTOF:
+${await material(ids)}` });
+    const cards = (r && r.cards || []).filter(c => c && c.front && c.back).map((c, i) => ({ id: 'c' + i, front: String(c.front), back: String(c.back), box: 1, due: 0 }));
+    if (!cards.length) throw { code: 'invalid_json' };
+    const row = await q(sb.from('decks').insert({ title: String(r.title || 'Flashcards').slice(0, 80), vak_id: commonVak(ids), cards }).select().single());
+    S.decks.unshift(row); S.sel.cards.clear();
+    toast(`${cards.length} flashcards klaar. Je kunt meteen oefenen.`);
+  } catch (e) { e && e.code ? aiErr(e) : dbErr(e); }
+  finally { setBusy(null); }
+}
+function startStudy(deckId, all) {
+  const now = Date.now(); const queue = [];
+  for (const d of S.decks) { if (deckId && d.id !== deckId) continue; for (const c of d.cards || []) if (all || (c.due || 0) <= now) queue.push({ deckId: d.id, cardId: c.id }); }
+  if (!queue.length) { toast('Er staan geen kaarten klaar.'); return; }
+  S.study = { queue: shuffle(queue).slice(0, 60), i: 0, flipped: false, known: 0, unknown: 0, retried: new Set() };
+  S.tab = 'kaarten'; render(); markStudy();
+}
+function answerCard(known) {
+  const st = S.study; const it = st.queue[st.i];
+  const deck = S.decks.find(d => d.id === it.deckId); if (!deck) { st.i++; render(); return; }
+  const card = deck.cards.find(c => c.id === it.cardId);
+  if (known) { card.box = Math.min(5, (card.box || 1) + 1); card.due = Date.now() + BOXDAYS[card.box] * DAY; st.known++; }
+  else { card.box = 1; card.due = Date.now() + DAY; st.unknown++; if (!st.retried.has(it.cardId)) { st.retried.add(it.cardId); st.queue.push(it); } }
+  st.i++; st.flipped = false;
+  const cards = deck.cards.map(c => ({ ...c }));
+  chain('deck:' + deck.id, () => q(sb.from('decks').update({ cards }).eq('id', deck.id)));
+  render();
+}
+
+/* ================= gesprek ================= */
+function chatSetup() {
+  const c = S.chat;
+  const toon = { vriendelijk: 'vriendelijk en geruststellend, maar wel inhoudelijk', neutraal: 'zakelijk en neutraal', streng: 'kritisch: vraag door op vage antwoorden en laat zwakke plekken niet liggen' }[c.toon];
+  const aantal = { kort: 4, normaal: 7, lang: 11 }[c.lengte];
+  const v = id => ($('#' + id) && $('#' + id).value.trim()) || '';
+  const ids = [...S.sel.chat]; let rol = '', role = '', title = '', stofMax = 0;
+  if (c.scenario === 'mondeling') { rol = 'Examinator'; title = 'Mondeling: ' + S.docs.filter(d => ids.includes(d.id)).map(d => d.title).slice(0, 2).join(', '); role = 'Je bent examinator bij een mondeling tentamen in het hbo. Je toetst of de student de studiestof begrijpt en kan toepassen. Stel open vragen over de stof, vraag naar voorbeelden en toepassingen, en vraag door als een antwoord oppervlakkig is.'; stofMax = 50000; }
+  if (c.scenario === 'sollicitatie') { const f = v('chFunctie') || 'een functie'; const o = v('chOrg'); rol = 'Recruiter'; title = 'Sollicitatie: ' + f; role = `Je bent een recruiter/leidinggevende die een sollicitatiegesprek voert voor de functie "${f}"${o ? ' bij ' + o : ''}. Stel realistische vragen: motivatie, ervaring, sterke en zwakke punten, situatievragen (STAR) en vragen over de organisatie. Sluit af met de vraag of de kandidaat zelf nog vragen heeft.`; stofMax = ids.length ? 20000 : 0; }
+  if (c.scenario === 'presentatie') { const o = v('chOnderwerp') || 'het onderwerp van de student'; rol = 'Jury'; title = 'Presentatie: ' + o; role = `De student heeft net een presentatie gegeven over "${o}". Jij bent docent/jurylid en stelt vragen na afloop: over keuzes, onderbouwing, bronnen, haalbaarheid en wat er beter kan.`; stofMax = ids.length ? 40000 : 0; }
+  if (c.scenario === 'stage') { const o = v('chStage') || 'een stagegesprek'; rol = 'Stagebegeleider'; title = 'Stagegesprek'; role = `Je bent stagebegeleider. Situatie: ${o}. Je bespreekt hoe het gaat, vraagt naar concrete voorbeelden, leerdoelen, feedback van collega's en wat de student nog wil ontwikkelen.`; }
+  if (c.scenario === 'eigen') { const o = v('chEigen') || 'een oefengesprek'; rol = 'Gesprekspartner'; title = 'Eigen gesprek'; role = `Speel de gesprekspartner in deze situatie die de student wil oefenen: ${o}`; }
+  return { role, rol, title: title.slice(0, 80), ids, stofMax, toon, aantal };
+}
+async function buildSystem(s) {
+  const stof = s.stofMax ? await material(s.ids, s.stofMax) : '';
+  return `${s.role}
+Dit is een oefenrollenspel om een student voor te bereiden. Blijf steeds in je rol. Stel één vraag tegelijk en wacht op het antwoord. Reageer kort op elk antwoord (doorvragen mag) en ga dan verder. Schrijf in natuurlijk gesproken Nederlands, zonder opsommingen of kopjes, maximaal 4 zinnen per beurt. Toon: ${s.toon}. Het gesprek duurt ongeveer ${s.aantal} vragen; rond daarna netjes af en zeg dat het gesprek klaar is. Geef tijdens het gesprek geen cijfer of beoordeling.${stof ? '\n\nSTOF WAAR HET GESPREK OVER GAAT:\n' + stof : ''}`;
+}
+function chatMsgs() {
+  let msgs = S.chat.msgs.slice(-40); let total = msgs.reduce((s, m) => s + m.content.length, 0);
+  while (total > 150000 && msgs.length > 2) { total -= msgs[0].content.length; msgs = msgs.slice(1); }
+  if (msgs[0] && msgs[0].role !== 'user') msgs = [{ role: 'user', content: '(Het gesprek is al bezig.)' }, ...msgs];
+  return msgs;
+}
+async function chatTurn() {
+  const c = S.chat; c.streaming = ''; scrollChat = true; render();
+  try { const text = await callAI({ kind: 'gesprek', system: c.system, messages: chatMsgs(), max_tokens: 800, onText: streamTo(c) }); c.msgs.push({ role: 'assistant', content: text }); }
+  catch (e) { aiErr(e); }
+  finally { c.streaming = null; render(); const i = $('#chatIn'); if (i) i.focus(); }
+}
+async function startChat() {
+  const c = S.chat; const s = chatSetup();
+  setBusy('Gesprek voorbereiden…');
+  try { c.system = await buildSystem(s); } finally { setBusy(null); }
+  Object.assign(c, { phase: 'run', msgs: [{ role: 'user', content: 'Begin het gesprek: stel jezelf kort voor in je rol en stel je eerste vraag.' }], tips: {}, feedback: null, rol: s.rol, title: s.title, setupInfo: s });
+  await chatTurn();
+}
+async function sendChat() {
+  const el = $('#chatIn'); const t = el && el.value.trim(); if (!t) return;
+  el.value = ''; S.chat.msgs.push({ role: 'user', content: t }); await chatTurn();
+}
+async function chatTip() {
+  const c = S.chat; const lastAi = [...c.msgs].reverse().find(m => m.role === 'assistant'); if (!lastAi) return;
+  setBusy('Tip ophalen…');
+  try {
+    const stof = c.scenario === 'mondeling' ? '\n\nStof:\n' + await material([...S.sel.chat], 20000) : '';
+    c.tips[c.msgs.lastIndexOf(lastAi)] = await callAI({ kind: 'tip', tier: 'quick', max_tokens: 400, prompt: `Een student oefent dit gesprek: ${c.title}. De gesprekspartner (${c.rol}) zei net:\n"${lastAi.content}"\n\nGeef de student een korte, concrete tip (maximaal 3 zinnen) hoe die hier sterk op kan antwoorden, bijvoorbeeld welke structuur of welk voorbeeld. Zeg het antwoord niet volledig voor. Schrijf in het Nederlands en spreek de student aan met "je".${stof}` });
+  } catch (e) { aiErr(e); }
+  finally { scrollChat = true; setBusy(null); }
+}
+async function endChat() {
+  const c = S.chat;
+  setBusy('Je gesprek wordt beoordeeld…');
+  try {
+    const transcript = c.msgs.slice(1).map(m => `${m.role === 'assistant' ? c.rol : 'Student'}: ${m.content}`).join('\n\n');
+    const stof = c.scenario === 'mondeling' ? '\n\nSTOF:\n' + await material([...S.sel.chat], 50000) : '';
+    const r = await aiJson({ kind: 'feedback', prompt: `Hieronder staat een oefengesprek (${c.title}) tussen een student en een AI die de rol van ${c.rol} speelde. Geef de student feedback als ervaren coach. Beoordeel inhoud, structuur, overtuigingskracht en hoe concreet de antwoorden waren${c.scenario === 'mondeling' ? ', en vooral of de inhoud klopt met de stof' : ''}. Spreek de student aan met "je".
+Antwoord met alleen JSON: {"cijfer":7.5,"samenvatting":"2-3 zinnen","sterk":["...","..."],"beter":["...","..."],"voorbeeld":{"vraag":"de vraag uit het gesprek waar de student het meest van kan leren","antwoord":"een sterk voorbeeldantwoord, in de ik-vorm"}}
+"cijfer" is op de Nederlandse schaal van 1 tot 10.
+
+GESPREK:
+${transcript}${stof}` });
+    const cijfer = Math.max(1, Math.min(10, +r.cijfer || 5.5));
+    c.feedback = { cijfer, samenvatting: String(r.samenvatting || ''), sterk: (r.sterk || []).map(String), beter: (r.beter || []).map(String), voorbeeld: r.voorbeeld || null };
+    c.phase = 'feedback'; markStudy();
+    try { const row = await q(sb.from('sessions').insert({ title: c.title, scenario: c.scenario, cijfer, feedback: c.feedback, msgs: c.msgs.slice(1, 41) }).select('id,title,scenario,cijfer,feedback,created_at').single()); S.sessions.unshift(row); } catch (e) { dbErr(e); }
+  } catch (e) { aiErr(e); }
+  finally { setBusy(null); }
+}
+
+/* ================= uitleg ================= */
+async function summarize(kind) {
+  const ids = [...S.sel.qa]; const qa = S.qa;
+  const inst = {
+    sam: 'Maak een heldere studiesamenvatting in het Nederlands van deze stof, bedoeld om voor een toets te leren. Gebruik kopjes (##), korte opsommingen en zet kernbegrippen **vet**. Sluit af met een kopje "## Kernvragen" met 5 vragen die de student zelf moet kunnen beantwoorden.',
+    beg: 'Maak een alfabetische begrippenlijst in het Nederlands van de belangrijkste begrippen uit deze stof. Per begrip één regel: "- **Begrip**: uitleg in 1-2 zinnen".',
+    simpel: 'Leg de belangrijkste ideeën uit deze stof eenvoudig uit in het Nederlands, alsof aan een eerstejaars student, met per idee een herkenbaar voorbeeld uit het dagelijks leven. Gebruik kopjes (##) per idee.'
+  }[kind];
+  qa.out = ''; qa.kind = kind;
+  setBusy(kind === 'sam' ? 'Samenvatting maken…' : kind === 'beg' ? 'Begrippenlijst maken…' : 'Uitleg schrijven…');
+  try {
+    const text = await callAI({ kind: 'uitleg', max_tokens: 6000, prompt: `${inst}\n\nSTOF:\n${await material(ids)}`, onText: t => { qa.out = t; const el = $('#sumOut'); if (el) el.innerHTML = md(t); else render(); } });
+    qa.out = text; markStudy();
+    if (kind === 'sam' && ids.length === 1) { const d = S.docs.find(x => x.id === ids[0]); if (d) { d.summary = text; chain('doc:' + d.id, () => q(sb.from('documents').update({ summary: text }).eq('id', d.id))); } }
+  } catch (e) { aiErr(e); }
+  finally { setBusy(null); }
+}
+async function askQa() {
+  const el = $('#qaIn'); const t = el && el.value.trim(); if (!t) return;
+  el.value = ''; const qa = S.qa; qa.msgs.push({ role: 'user', content: t }); qa.streaming = ''; scrollChat = true; render();
+  try {
+    const system = `Je bent een geduldige studiecoach voor een hbo-student. Beantwoord de vragen op basis van de studiestof hieronder. Staat het antwoord niet in de stof, zeg dat dan eerlijk en geef daarna algemene uitleg met die kanttekening. Antwoord in het Nederlands, helder en to the point, met een voorbeeld waar dat helpt. Gebruik eventueel korte opsommingen en **vet** voor kernbegrippen.\n\nSTOF:\n${await material([...S.sel.qa], 60000)}`;
+    const text = await callAI({ kind: 'vraag', system, messages: qa.msgs.slice(-20), max_tokens: 2000, onText: streamTo(qa) });
+    qa.msgs.push({ role: 'assistant', content: text });
+  } catch (e) { aiErr(e); qa.msgs.pop(); }
+  finally { qa.streaming = null; render(); }
+}
+
+/* ================= leerplan ================= */
+async function makePlan(examId) {
+  const e = S.exams.find(x => x.id === examId); if (!e) return;
+  const dLeft = daysUntil(e.datum);
+  if (dLeft < 1) { toast('De toets is vandaag; daar past geen leerplan meer in. Succes!'); return; }
+  const ids = S.docs.filter(d => d.vak_id === e.vak_id).map(d => d.id);
+  const start = new Date(); if (dLeft > 21) start.setDate(start.getDate() + dLeft - 21);
+  setBusy('Je leerplan wordt gemaakt…');
+  try {
+    const stof = ids.length ? await material(ids, 25000) : '(nog geen stof toegevoegd)';
+    const r = await aiJson({ kind: 'leerplan', prompt: `Maak een realistisch leerplan in het Nederlands voor een hbo-student die toets "${e.naam}" (vak ${vakNaam(e.vak_id)}) heeft op ${e.datum}. Plan één taak per dag van ${start.toLocaleDateString('sv-SE')} tot en met de dag vóór de toets. Elke taak is concreet en kost 20 tot 60 minuten, bijvoorbeeld een hoofdstuk lezen, flashcards herhalen, een oefentoets maken, een samenvatting schrijven of een mondeling oefenen. Begin met begrijpen, eindig met oefenen en herhalen; plan de laatste dag licht.
+Beschikbare documenten: ${S.docs.filter(d => ids.includes(d.id)).map(d => d.title).join(', ') || 'geen'}.
+Antwoord met alleen JSON: {"plan":[{"datum":"YYYY-MM-DD","taak":"..."}]}
+
+STOF (ingekort):
+${stof}` });
+    const plan = (r && r.plan || []).filter(t => t && /^\d{4}-\d{2}-\d{2}$/.test(t.datum) && t.taak && t.datum < e.datum).map(t => ({ datum: t.datum, taak: String(t.taak), done: false })).sort((a, b) => a.datum.localeCompare(b.datum)).slice(0, 30);
+    if (!plan.length) throw { code: 'invalid_json' };
+    e.plan = plan; S.openPlan = e.id;
+    await q(sb.from('exams').update({ plan }).eq('id', e.id));
+    toast(`Leerplan klaar: ${plan.length} dagen tot je toets.`);
+  } catch (err) { err && err.code ? aiErr(err) : dbErr(err); }
+  finally { setBusy(null); }
+}
+
+/* ================= beheer ================= */
+async function loadAdmin() {
+  if (S.admin.loading) return; S.admin.loading = true;
+  try { S.admin.rows = await q(sb.rpc('admin_overview')); }
+  catch (e) { console.error(e); toast('Accounts laden lukte niet.'); S.admin.rows = []; }
+  finally { S.admin.loading = false; render(); }
+}
+async function adminFn(body) {
+  const { data: { session } } = await sb.auth.getSession();
+  const res = await fetch(`${CFG.SUPABASE_URL}/functions/v1/admin`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY }, body: JSON.stringify(body) });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw j;
+  return j;
+}
+async function adminCreate() {
+  const A = S.admin; const role = A.newRole; const groep = $('#adGroep').value.trim(); const limit = +$('#adLimit').value || 60; const sendMail = $('#adMail').checked;
+  let list = [];
+  if (A.bulk) list = $('#adBulk').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const p = l.split(/[;,\t]/).map(x => x.trim()); return p.length > 1 ? { name: p[0], email: p[1] } : { name: '', email: p[0] }; });
+  else list = [{ email: $('#adEmail').value.trim(), name: $('#adName').value.trim() }];
+  list = list.filter(x => x.email);
+  if (!list.length) { toast('Vul minstens één e-mailadres in.'); return; }
+  let ok = 0, mailed = 0; const fails = [];
+  for (let i = 0; i < list.length; i++) {
+    setBusy(`Account ${i + 1} van ${list.length} toevoegen…`);
+    try { const r = await adminFn({ action: 'create', email: list[i].email, name: list[i].name, role, groep, daily_ai_limit: limit, sendMail }); ok++; if (r.mailed) mailed++; }
+    catch (e) { fails.push(`${list[i].email} (${e.error === 'exists' ? 'bestaat al' : e.error === 'bad_email' ? 'ongeldig adres' : 'fout'})`); }
+  }
+  setBusy(null);
+  toast(`${plural(ok, 'account', 'accounts')} toegevoegd${sendMail ? `, ${mailed} welkomstmail${mailed === 1 ? '' : 's'} verstuurd` : ''}.${fails.length ? ' Niet gelukt: ' + fails.join(', ') : ''}`, 9000);
+  if (sendMail && ok && !mailed) toast('Er zijn geen welkomstmails verstuurd. Controleer of RESEND_API_KEY bij de Edge Function-secrets staat.', 9000);
+  ['adEmail', 'adName', 'adBulk'].forEach(id => { const el = $('#' + id); if (el) el.value = ''; });
+  S.admin.rows = null; render();
+}
+
+/* ================= gebeurtenissen ================= */
+document.addEventListener('click', async e => {
+  const el = e.target.closest('[data-act]'); if (!el || el.disabled || $('#app').hidden) return;
+  const a = el.dataset.act; const d = el.dataset;
+  try {
+  if (a === 'tab') { S.tab = d.tab; S.confirm = null; if (d.tab === 'vakken') S.openVak = null; render(); window.scrollTo(0, 0); return; }
+  if (a === 'pick') { const s = S.sel[d.key]; s.has(d.id) ? s.delete(d.id) : s.add(d.id); render(); return; }
+  if (a === 'pickvak') { const s = S.sel[d.key]; const ids = S.docs.filter(x => (x.vak_id || '') === d.vak).map(x => x.id); const all = ids.every(i => s.has(i)); ids.forEach(i => all ? s.delete(i) : s.add(i)); render(); return; }
+  if (a === 'seg') { const [obj, key] = d.group.split('.'); const t = obj === 'cards' ? S.cardsSet : S[obj]; t[key] = isNaN(+d.val) ? d.val : +d.val; render(); return; }
+  if (a === 'confirm') { S.confirm = d.key; render(); return; }
+  if (a === 'cancel') { S.confirm = null; render(); return; }
+  // vakken
+  if (a === 'vakkleur') { S.newVakKleur = d.k; render(); return; }
+  if (a === 'vakadd') {
+    const naam = $('#vakNaam').value.trim(); if (!naam) { toast('Geef je vak een naam.'); return; }
+    if (S.vakken.some(v => v.naam.toLowerCase() === naam.toLowerCase())) { toast('Dit vak bestaat al.'); return; }
+    const row = await q(sb.from('vakken').insert({ naam, kleur: S.newVakKleur }).select().single());
+    S.vakken.push(row); $('#vakNaam').value = ''; S.newVakKleur = String((S.vakken.length % 6) + 1); S.openVak = row.id; render(); toast(`Vak ${naam} aangemaakt. Voeg nu je documenten toe.`); return;
+  }
+  if (a === 'vakopen') { S.openVak = d.id; S.confirm = null; render(); window.scrollTo(0, 0); return; }
+  if (a === 'vakback') { S.openVak = null; S.confirm = null; render(); return; }
+  if (a === 'vakrename') { S.confirm = 'rename:' + d.id; render(); const i = $('#vakRename'); if (i) i.focus(); return; }
+  if (a === 'vakrenamesave') { const naam = $('#vakRename').value.trim(); if (!naam) return; await q(sb.from('vakken').update({ naam }).eq('id', d.id)); vak(d.id).naam = naam; S.confirm = null; render(); return; }
+  if (a === 'vakdel') { await q(sb.from('vakken').delete().eq('id', d.id)); S.vakken = S.vakken.filter(v => v.id !== d.id); [S.docs, S.decks, S.results, S.exams].forEach(arr => arr.forEach(x => { if (x.vak_id === d.id) x.vak_id = null; })); S.openVak = null; S.confirm = null; render(); toast('Vak verwijderd. De documenten staan nu onder "Zonder vak".'); return; }
+  if (a === 'vakgo') {
+    const ids = S.docs.filter(x => (x.vak_id || '') === d.id).map(x => x.id);
+    const key = { toets: 'quiz', kaarten: 'cards', uitleg: 'qa', gesprek: 'chat' }[d.to];
+    S.sel[key] = new Set(ids); if (d.to === 'gesprek') { S.chat.scenario = 'mondeling'; S.chat.phase = 'setup'; } if (d.to === 'toets') S.quiz.phase = 'setup';
+    S.tab = d.to; render(); window.scrollTo(0, 0); return;
+  }
+  // documenten
+  if (a === 'paste') { const t = $('#upText'); if (!t.value.trim()) { toast('Plak eerst tekst in het vak.'); return; } setBusy('Tekst opslaan…'); try { await addDocument({ title: $('#upTitle').value.trim() || `Notities ${fmtDate(Date.now())}`, vakId: d.vak || null, text: t.value, source: 'geplakt' }); t.value = ''; $('#upTitle').value = ''; } finally { setBusy(null); } return; }
+  if (a === 'docview') { if (S.openDoc === d.id) { S.openDoc = null; render(); return; } S.openDoc = d.id; render(); await ensureTexts([d.id]); render(); return; }
+  if (a === 'docfile') {
+    const w = window.open('', '_blank'); const doc = S.docs.find(x => x.id === d.id);
+    const { data, error } = await sb.storage.from('documenten').createSignedUrl(doc.file_path, 120);
+    if (error) { if (w) w.close(); toast('Het originele bestand kon niet geopend worden.'); return; }
+    if (w) w.location = data.signedUrl; else location.href = data.signedUrl; return;
+  }
+  if (a === 'docdel') { const doc = S.docs.find(x => x.id === d.id); await q(sb.from('documents').delete().eq('id', d.id)); if (doc && doc.file_path) sb.storage.from('documenten').remove([doc.file_path]); S.docs = S.docs.filter(x => x.id !== d.id); Object.values(S.sel).forEach(s => s.delete(d.id)); S.confirm = null; render(); toast('Document verwijderd.'); return; }
+  if (a === 'ask') { S.sel.qa = new Set([d.id]); S.tab = 'uitleg'; render(); window.scrollTo(0, 0); return; }
+  // toetsplanner
+  if (a === 'examadd') {
+    const vak_id = $('#exVak').value || null, naam = $('#exNaam').value.trim(), datum = $('#exDatum').value;
+    if (!naam || !datum) { toast('Vul de naam van de toets en de datum in.'); return; }
+    const row = await q(sb.from('exams').insert({ vak_id, naam, datum }).select().single());
+    S.exams.push(row); $('#exNaam').value = ''; $('#exDatum').value = ''; render(); toast('Toets toegevoegd. Klik op "Maak leerplan" voor een planning per dag.', 6000); return;
+  }
+  if (a === 'examdel') { await q(sb.from('exams').delete().eq('id', d.id)); S.exams = S.exams.filter(x => x.id !== d.id); S.confirm = null; render(); return; }
+  if (a === 'examquiz') { const ids = S.docs.filter(x => (x.vak_id || '') === d.vak).map(x => x.id); S.sel.quiz = new Set(ids); S.quiz.phase = 'setup'; S.tab = 'toets'; render(); if (!ids.length) toast('Je hebt nog geen stof bij dit vak. Voeg die toe bij Vakken.', 6000); return; }
+  if (a === 'planmake') { await makePlan(d.id); return; }
+  if (a === 'planopen') { S.openPlan = S.openPlan === d.id ? null : d.id; render(); return; }
+  if (a === 'plantoggle') { const ex = S.exams.find(x => x.id === d.exam); const t = ex.plan[+d.i]; t.done = !t.done; if (t.done) markStudy(); render(); const plan = ex.plan.map(x => ({ ...x })); chain('exam:' + ex.id, () => q(sb.from('exams').update({ plan }).eq('id', ex.id))); return; }
+  if (a === 'weakquiz') {
+    const rs = S.results.filter(r => r.kind === 'toets').slice(0, 5); const weak = [...new Set(rs.flatMap(r => r.weak || []))];
+    const vakIds = new Set(rs.map(r => r.vak_id).filter(Boolean)); S.sel.quiz = new Set(S.docs.filter(x => vakIds.has(x.vak_id)).map(x => x.id));
+    S.tab = 'toets'; S.quiz.phase = 'setup'; render(); const f = $('#quizFocus'); if (f) f.value = weak.join(', '); return;
+  }
+  // oefentoets
+  if (a === 'quizgo') { await startQuiz([...S.sel.quiz], ($('#quizFocus') && $('#quizFocus').value.trim()) || ''); return; }
+  if (a === 'mc') { S.quiz.answers[S.quiz.i] = +d.k; render(); return; }
+  if (a === 'quiznext' || a === 'openans' || a === 'openskip') {
+    const qz = S.quiz;
+    if (a === 'openans') { qz.answers[qz.i] = ($('#openAns').value || '').trim(); $('#openAns').value = ''; }
+    if (a === 'openskip') { qz.answers[qz.i] = ''; $('#openAns').value = ''; }
+    if (qz.i + 1 < qz.qs.length) { qz.i++; render(); } else await finishQuiz();
+    return;
+  }
+  if (a === 'quizstop' || a === 'quiznew') { S.quiz.phase = 'setup'; render(); return; }
+  if (a === 'quizweak') { const w = S.quiz.weak.join(', '); S.sel.quiz = new Set(S.quiz.docIds.filter(i => S.docs.some(x => x.id === i))); S.quiz.phase = 'setup'; render(); $('#quizFocus').value = w; return; }
+  if (a === 'quizcards') {
+    const qz = S.quiz;
+    const cards = qz.wrong.map((o, i) => ({ id: 'c' + i, front: o.x.question, back: o.x.type === 'mc' ? o.x.options[o.x.answer] + (o.x.explanation ? ' — ' + o.x.explanation : '') : (o.x.modelAnswer || ''), box: 1, due: 0 }));
+    const row = await q(sb.from('decks').insert({ title: ('Fouten: ' + qz.title).slice(0, 80), vak_id: qz.vakId, cards }).select().single());
+    S.decks.unshift(row); toast(`${cards.length} flashcards gemaakt van je fouten.`); render(); return;
+  }
+  // flashcards
+  if (a === 'cardsgo') { await makeDeck([...S.sel.cards]); return; }
+  if (a === 'study') { startStudy(d.deck || null, !!d.all); return; }
+  if (a === 'flip') { if (S.study) { S.study.flipped = !S.study.flipped; render(); } return; }
+  if (a === 'know') { answerCard(d.v === '1'); return; }
+  if (a === 'studyend') { S.study = null; render(); return; }
+  if (a === 'deckdel') { await q(sb.from('decks').delete().eq('id', d.id)); S.decks = S.decks.filter(x => x.id !== d.id); S.confirm = null; render(); toast('Set verwijderd.'); return; }
+  // gesprek
+  if (a === 'chatgo') { await startChat(); return; }
+  if (a === 'chatsend') { await sendChat(); return; }
+  if (a === 'chattip') { await chatTip(); return; }
+  if (a === 'chatend') { await endChat(); return; }
+  if (a === 'chatnew') { S.chat.phase = 'setup'; S.chat.msgs = []; render(); return; }
+  if (a === 'chatagain') { const c = S.chat; Object.assign(c, { phase: 'run', msgs: [c.msgs[0]], tips: {}, feedback: null }); await chatTurn(); return; }
+  // uitleg
+  if (a === 'sum') { await summarize(d.kind); return; }
+  if (a === 'sumdl') { download(`leerpuls-${S.qa.kind || 'uitleg'}.md`, S.qa.out, 'text/markdown'); return; }
+  if (a === 'qasend') { await askQa(); return; }
+  if (a === 'qaclear') { S.qa.msgs = []; render(); return; }
+  // beheer
+  if (a === 'adminreload') { S.admin.rows = null; render(); return; }
+  if (a === 'adminbulk') { S.admin.bulk = !S.admin.bulk; render(); return; }
+  if (a === 'admincreate') { await adminCreate(); return; }
+  if (a === 'admintoggle') { const r = S.admin.rows.find(x => x.email === d.email); await q(sb.from('accounts').update({ active: !r.active }).eq('email', d.email)); r.active = !r.active; render(); toast(r.active ? 'Account geactiveerd.' : 'Account gepauzeerd.'); return; }
+  if (a === 'adminrole') { const r = S.admin.rows.find(x => x.email === d.email); const role = r.role === 'admin' ? 'student' : 'admin'; await q(sb.from('accounts').update({ role }).eq('email', d.email)); r.role = role; render(); return; }
+  if (a === 'admindel') { setBusy('Account verwijderen…'); try { await adminFn({ action: 'delete', email: d.email }); S.admin.rows = S.admin.rows.filter(x => x.email !== d.email); S.confirm = null; toast('Account en alle bijbehorende gegevens verwijderd.'); } catch (err) { toast('Verwijderen lukte niet.'); } finally { setBusy(null); } return; }
+  // account
+  if (a === 'acname') { const n = $('#acName').value.trim(); await q(sb.rpc('set_my_name', { p_name: n })); S.account.name = n; render(); toast('Naam opgeslagen.'); return; }
+  if (a === 'export') {
+    setBusy('Gegevens verzamelen…');
+    try {
+      const [vakken, documents, decks, results, sessions, exams] = await Promise.all(['vakken', 'documents', 'decks', 'results', 'sessions', 'exams'].map(t => q(sb.from(t).select('*'))));
+      download(`leerpuls-gegevens-${todayStr()}.json`, JSON.stringify({ account: S.account, exported_at: new Date().toISOString(), vakken, documents, decks, results, sessions, exams }, null, 2));
+    } finally { setBusy(null); }
+    return;
+  }
+  if (a === 'logout') { await sb.auth.signOut(); return; }
+  } catch (err) { dbErr(err); }
+});
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.move) {
+    const id = t.dataset.move; const vak_id = t.value || null;
+    try { await q(sb.from('documents').update({ vak_id }).eq('id', id)); S.docs.find(x => x.id === id).vak_id = vak_id; toast(`Verplaatst naar ${vakNaam(vak_id)}.`); render(); } catch (err) { dbErr(err); }
+  }
+  if (t.dataset && t.dataset.limit) {
+    const n = Math.max(0, Math.min(10000, +t.value || 0));
+    try { await q(sb.from('accounts').update({ daily_ai_limit: n }).eq('email', t.dataset.limit)); const r = S.admin.rows.find(x => x.email === t.dataset.limit); if (r) r.daily_ai_limit = n; toast('AI-limiet aangepast.'); } catch (err) { dbErr(err); }
+  }
+});
+document.addEventListener('input', e => {
+  if (e.target.dataset && e.target.dataset.filter) { S.admin.filter = e.target.value; render(); }
+});
+document.addEventListener('keydown', e => {
+  if ($('#app').hidden) return;
+  const id = e.target.id;
+  if (e.key === 'Enter' && !e.shiftKey && (id === 'chatIn' || id === 'qaIn')) {
+    e.preventDefault(); if (S.busy) return;
+    if (id === 'chatIn' && S.chat.streaming == null) sendChat();
+    if (id === 'qaIn' && S.qa.streaming == null && S.sel.qa.size) askQa();
+    return;
+  }
+  if (e.key === 'Enter' && id === 'vakNaam') { e.preventDefault(); $('[data-act="vakadd"]').click(); return; }
+  if (S.study && S.tab === 'kaarten' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) {
+    if (e.key === ' ' || (e.key === 'Enter' && e.target.classList.contains('icard'))) { e.preventDefault(); S.study.flipped = !S.study.flipped; render(); }
+    if (S.study.flipped && (e.key === '1' || e.key === '2')) { e.preventDefault(); answerCard(e.key === '2'); }
+  }
+});
+document.addEventListener('paste', e => {
+  if ($('#app').hidden || S.tab !== 'vakken' || S.openVak === null) return;
+  if (/INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  const imgs = [...(e.clipboardData && e.clipboardData.files || [])].filter(f => f.type.startsWith('image/'));
+  if (imgs.length) { e.preventDefault(); handleFiles(imgs, S.openVak || null); }
+});
+
+/* ================= opstarten ================= */
+(async () => {
+  if (!window.LEERPULS_CONFIG) { showGate('blocked', { reason: 'config.js is niet gevonden. Zet config.js in dezelfde map als index.html (in je GitHub-repo). In een voorbeeldweergave werkt de app niet; open hem via je eigen adres.' }); return; }
+  if (!CONFIG_OK) { showGate('blocked', { reason: 'Leerpuls is nog niet gekoppeld aan Supabase. Vul in config.js je Supabase-URL en publishable key in.' }); return; }
+  if (!sb) { showGate('blocked', { reason: 'De verbinding met Supabase kon niet worden opgezet. Controleer je internetverbinding en de gegevens in config.js.' }); return; }
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await start(false); else showGate('email');
+})();
+</script>
+</body>
+</html>
