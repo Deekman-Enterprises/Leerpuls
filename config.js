@@ -3,6 +3,6 @@
 // (Supabase → Project Settings → API Keys / Data API).
 // Let op: de URL kaal laten, dus zonder /rest/v1/ erachter.
 window.LEERPULS_CONFIG = {
-  SUPABASE_URL: 'https://JOUW-PROJECT-ID.supabase.co',
-  SUPABASE_KEY: 'sb_publishable_VUL_HIER_IN'
+  SUPABASE_URL: 'https://dtcoymzzhsqbdpkyxuti.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_F04HnSk-IGFBPCD77fdzKA_2YeHXPuF'
 };
