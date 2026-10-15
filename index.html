@@ -230,6 +230,16 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .outcome.deal{background:var(--good-bg);color:var(--good)} .outcome.weg{background:var(--bad-bg);color:var(--bad)}
 .hint-irritant{border-left:4px solid var(--bad);padding:8px 12px;font-size:.9rem;background:var(--bad-bg);border-radius:0 8px 8px 0}
 @media (prefers-reduced-motion: reduce){.mood .bar i{transition:none}}
+.voicebar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:.9rem}
+.voicebar label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.mic{display:inline-flex;align-items:center;gap:8px;font-weight:700;border-radius:999px;padding:10px 18px;border:1px solid var(--ink);background:var(--card);color:var(--ink);cursor:pointer;line-height:1.2}
+.mic svg{width:20px;height:20px}
+.mic.on{background:var(--bad);border-color:var(--bad);color:#fff;animation:micpulse 1.2s ease-in-out infinite}
+@keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(191,59,52,.45)}50%{box-shadow:0 0 0 10px rgba(191,59,52,0)}}
+.talkrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.livetxt{font-size:.9rem;color:var(--muted);font-style:italic;min-height:1.4em}
+.speaking{font-size:.85rem;color:var(--muted);display:flex;gap:8px;align-items:center}
+@media (prefers-reduced-motion: reduce){.mic.on{animation:none}}
 .steps{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
 .steps div{display:grid;gap:4px;border-top:3px solid var(--hl-solid);padding-top:10px}
 .meter{display:flex;align-items:center;gap:8px}
@@ -324,7 +334,7 @@ const S = {
   photos: [], photoUrls: {}, phVak: '', phTitle: '',
   quiz: { phase: 'setup', n: 10, soort: 'mix', niveau: 'toets' },
   cardsSet: { n: 15 }, study: null,
-  chat: { phase: 'setup', scenario: 'verkoop', toon: 'neutraal', lengte: 'normaal', msgs: [], tips: {} },
+  chat: { phase: 'setup', read: false, hands: false, scenario: 'verkoop', toon: 'neutraal', lengte: 'normaal', msgs: [], tips: {} },
   qa: { msgs: [], out: '' },
   admin: { rows: null, newRole: 'student', bulk: false }
 };
@@ -898,6 +908,90 @@ const SCEN = {
   stage: { t: 'Stage- of beoordelingsgesprek', d: 'Met je stagebegeleider of praktijkbegeleider.' },
   eigen: { t: 'Eigen situatie', d: 'Beschrijf zelf het gesprek dat je wilt oefenen.' }
 };
+/* ---- spraak: praten en voorlezen ---- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const VP0 = (() => { try { return JSON.parse(localStorage.getItem('lp_voice') || '{}'); } catch { return {}; } })();
+const V = { canListen: !!SR, canSpeak: 'speechSynthesis' in window, listening: false, rec: null, final: '', interim: '', speaking: false, voice: null, unlocked: false };
+Object.assign(S.chat, { read: !!VP0.read, hands: !!VP0.hands });
+function savePrefs() { try { localStorage.setItem('lp_voice', JSON.stringify({ read: S.chat.read, hands: S.chat.hands })); } catch {} }
+function pickVoice() {
+  if (!V.canSpeak) return null;
+  const vs = speechSynthesis.getVoices().filter(v => /^nl(-|_|$)/i.test(v.lang));
+  const pref = [/nl-NL/i, /Xander|Claire|Ellen|Fenna|Colette|Maarten/i, /Google/i];
+  vs.sort((a, b) => pref.reduce((s, r, i) => s + ((r.test(b.lang + ' ' + b.name) ? 1 : 0) - (r.test(a.lang + ' ' + a.name) ? 1 : 0)) * (3 - i), 0));
+  return vs[0] || null;
+}
+if (V.canSpeak) { V.voice = pickVoice(); try { speechSynthesis.addEventListener('voiceschanged', () => { V.voice = pickVoice(); }); } catch {} }
+function unlockSpeech() {
+  if (!V.canSpeak || V.unlocked) return; V.unlocked = true;
+  try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {}
+}
+function speakable(t) { return cleanTags(t).replace(/\*[^*]{1,40}\*/g, ' ').replace(/[#_>`]/g, '').replace(/\s+/g, ' ').trim(); }
+function speak(text, done) {
+  if (!V.canSpeak || !text) { if (done) done(); return; }
+  try { speechSynthesis.cancel(); } catch {}
+  const parts = speakable(text).match(/[^.!?]+[.!?]*\s*/g) || [];
+  if (!parts.length) { if (done) done(); return; }
+  V.speaking = true; updateVoiceUi();
+  let i = 0;
+  const next = () => {
+    if (!V.speaking) return;
+    if (i >= parts.length) { V.speaking = false; updateVoiceUi(); if (done) done(); return; }
+    const u = new SpeechSynthesisUtterance(parts[i++].trim());
+    u.lang = 'nl-NL'; if (V.voice) u.voice = V.voice;
+    u.rate = S.chat.setupInfo && S.chat.setupInfo.irritant ? 1.12 : 1.02;
+    u.onend = next; u.onerror = () => { V.speaking = false; updateVoiceUi(); if (done) done(); };
+    try { speechSynthesis.speak(u); } catch (e) { console.error(e); V.speaking = false; updateVoiceUi(); if (done) done(); }
+  };
+  next();
+}
+function stopSpeaking() { V.speaking = false; try { speechSynthesis.cancel(); } catch {} updateVoiceUi(); }
+function startListening(auto) {
+  if (!V.canListen || V.listening) return;
+  stopSpeaking();
+  const rec = new SR(); V.rec = rec;
+  rec.lang = 'nl-NL'; rec.interimResults = true; rec.continuous = !/iPhone|iPad|iPod/i.test(navigator.userAgent); rec.maxAlternatives = 1;
+  const box = $('#chatIn'); V.final = box && box.value.trim() ? box.value.trim() + ' ' : ''; V.interim = '';
+  let silence = null;
+  const armSilence = () => { clearTimeout(silence); silence = setTimeout(() => { try { rec.stop(); } catch {} }, S.chat.hands ? 1800 : 4000); };
+  rec.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) V.final += r[0].transcript.trim() + ' '; else interim += r[0].transcript; }
+    V.interim = interim; const b = $('#chatIn'); if (b) b.value = (V.final + interim).trim();
+    const lt = $('#liveTxt'); if (lt) lt.textContent = interim ? '… ' + interim : '';
+    armSilence();
+  };
+  rec.onerror = e => {
+    V.listening = false; clearTimeout(silence); updateVoiceUi();
+    if ((e.error === 'not-allowed' || e.error === 'service-not-allowed') && auto) toast('Tik op "Praat" om te antwoorden.');
+    else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Leerpuls mag je microfoon niet gebruiken. Sta de microfoon toe bij de site-instellingen van je browser en probeer opnieuw.', 8000);
+    else if (e.error === 'no-speech' && auto) { /* stil: student kan opnieuw tikken */ }
+    else if (e.error === 'no-speech') toast('Ik hoorde niets. Tik op de microfoon en praat iets dichter bij je telefoon.');
+    else if (e.error === 'network') toast('Spraakherkenning heeft internet nodig. Controleer je verbinding.');
+    else if (e.error !== 'aborted') toast('Spraakherkenning stopte onverwacht. Probeer het opnieuw of typ je antwoord.');
+  };
+  rec.onend = () => {
+    clearTimeout(silence); const was = V.listening; V.listening = false; updateVoiceUi();
+    const b = $('#chatIn'); if (b) b.value = (V.final + V.interim).trim();
+    if (was && S.chat.hands && b && b.value.trim() && S.chat.phase === 'run' && !S.chat.over && S.chat.streaming == null && !S.busy) sendChat();
+  };
+  try { rec.start(); V.listening = true; armSilence(); updateVoiceUi(); }
+  catch (e) { V.listening = false; updateVoiceUi(); }
+}
+function stopListening() { if (V.rec) { try { V.rec.stop(); } catch {} } }
+function updateVoiceUi() {
+  const m = $('#micBtn'); if (m) { m.classList.toggle('on', V.listening); m.querySelector('span').textContent = V.listening ? 'Ik luister… (tik om te stoppen)' : 'Praat'; m.setAttribute('aria-pressed', V.listening); }
+  const sp = $('#speakingNow'); if (sp) sp.hidden = !V.speaking;
+}
+const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+function voiceControls() {
+  const c = S.chat;
+  if (!V.canListen && !V.canSpeak) return '';
+  return `<div class="voicebar">
+    ${V.canSpeak ? `<label><input type="checkbox" id="vRead" ${c.read ? 'checked' : ''}> 🔊 Voorlezen</label>` : ''}
+    ${V.canListen ? `<label><input type="checkbox" id="vHands" ${c.hands ? 'checked' : ''}> 🎙️ Spreekmodus (handsfree)</label>` : ''}
+    <span class="speaking" id="speakingNow" ${V.speaking ? '' : 'hidden'}>🔊 Aan het praten… <button class="link small" data-act="stopspeak">Stop</button></span></div>`;
+}
 const TAG_RE = /\[(GEDULD|DEAL|WEG)[^\]]*\]/gi;
 function cleanTags(t) { return String(t || '').replace(TAG_RE, '').replace(/\[[A-Z]{0,6}:?[^\]\n]*$/i, '').trim(); }
 function readTags(t) {
@@ -925,7 +1019,9 @@ function vGesprek() {
     if (c.over === 'weg') h += `<div class="outcome weg">🚪 De ${esc(c.rol.toLowerCase())} is weggelopen. Bekijk in de feedback wat je anders kunt doen.</div>`;
     const lock = S.busy || c.streaming != null;
     if (c.phase === 'run' && c.over) h += `<div class="row"><button class="btn hl" data-act="chatend" ${lock ? 'disabled' : ''}>Bekijk je feedback</button><button class="btn ghost" data-act="chatagain" ${lock ? 'disabled' : ''}>Probeer opnieuw</button></div>`;
-    else if (c.phase === 'run') h += `<label class="field"><span>Jouw antwoord</span><textarea id="chatIn" placeholder="Antwoord zoals je het in het echt zou zeggen. Enter = versturen, Shift+Enter = nieuwe regel"></textarea></label>
+    else if (c.phase === 'run') h += `${voiceControls()}
+      ${V.canListen ? `<div class="talkrow"><button class="mic ${V.listening ? 'on' : ''}" id="micBtn" data-act="mic" aria-pressed="${V.listening}" ${lock ? 'disabled' : ''}>${ICON_MIC}<span>${V.listening ? 'Ik luister… (tik om te stoppen)' : 'Praat'}</span></button><span class="small muted">${c.hands ? 'Praat gewoon; na een korte stilte wordt je antwoord verstuurd.' : 'Tik, praat, tik weer. Controleer de tekst en verstuur.'}</span></div><div class="livetxt" id="liveTxt"></div>` : `<p class="small muted">Praten werkt niet in deze browser. Gebruik de microfoon op je toetsenbord, of open Leerpuls in Chrome of Safari.</p>`}
+      <label class="field"><span>Jouw antwoord</span><textarea id="chatIn" placeholder="${V.canListen ? 'Praat met de knop hierboven, of typ je antwoord.' : 'Antwoord zoals je het in het echt zou zeggen.'} Enter = versturen, Shift+Enter = nieuwe regel"></textarea></label>
       <div class="row"><button class="btn" data-act="chatsend" ${lock ? 'disabled' : ''}>Verstuur</button><button class="btn ghost" data-act="chattip" ${lock ? 'disabled' : ''}>Geef een tip</button><button class="btn hl" data-act="chatend" ${lock || c.msgs.length < 4 ? 'disabled' : ''}>Rond af en krijg feedback</button></div>`;
     h += `</section>`;
     if (c.phase === 'feedback' && c.feedback) {
@@ -951,6 +1047,7 @@ function vGesprek() {
   ${extra}
   <div class="fields"><div class="field"><span>Gesprekspartner</span>${seg('chat.toon', c.toon, [['vriendelijk', 'Vriendelijk'], ['neutraal', 'Neutraal'], ['streng', 'Kritisch'], ['irritant', 'Irritant 🔥']])}</div>
   <div class="field"><span>Lengte</span>${seg('chat.lengte', c.lengte, [['kort', 'Kort'], ['normaal', 'Normaal'], ['lang', 'Lang']])}</div></div>
+  ${V.canListen || V.canSpeak ? `<div class="field"><span>Praten in plaats van typen</span>${voiceControls()}<span class="small muted">Met spreekmodus voer je het gesprek hardop, zoals in het echt: de ${s === 'verkoop' ? 'klant' : 'gesprekspartner'} praat terug en daarna luistert Leerpuls weer naar jou. Zet je volume aan; een koptelefoon met microfoon werkt het best.</span></div>` : ''}
   ${c.toon === 'irritant' ? `<div class="hint-irritant"><b>Moeilijkste niveau.</b> ${s === 'verkoop' ? 'De klant heeft eigenlijk geen zin, onderbreekt je, wil korting, noemt de concurrent goedkoper en gelooft je niet zomaar.' : 'Je gesprekspartner is ongeduldig, onderbreekt je, twijfelt aan alles en laat vage antwoorden niet liggen.'} Zijn geduld zakt bij vage, lange of zelfverzekerde-maar-lege antwoorden en stijgt alleen als je echt goed reageert. Op 0 loopt hij weg.</div>` : ''}
   <div><button class="btn" data-act="chatgo" ${can ? '' : 'disabled'}>Start gesprek</button></div></section>
   ${S.sessions.length ? `<section class="panel"><h3>Eerdere gesprekken</h3><div class="list">${S.sessions.slice(0, 10).map(x => `<div class="item"><div class="main"><span class="t">${esc(x.title)}</span><span class="small muted">${fmtDate(x.created_at)}${x.feedback && x.feedback.beter && x.feedback.beter[0] ? ' · ' + esc(x.feedback.beter[0]) : ''}</span></div>${x.cijfer != null ? `<span class="grade ${vClass(x.cijfer)}">${fmtCijfer(x.cijfer)}</span>` : ''}</div>`).join('')}</div></section>` : ''}</div>`;
@@ -1022,7 +1119,7 @@ let scrollChat = false;
 function render() {
   const root = $('#app'); if (root.hidden) return;
   const keep = {};
-  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
   const act = document.activeElement; const fid = act && root.contains(act) && act.id;
   let ss, se; try { ss = act.selectionStart; se = act.selectionEnd; } catch {}
   const openDetails = [...root.querySelectorAll('details')].map(d => d.open);
@@ -1171,7 +1268,7 @@ ${s.verkoop ? `- Je hebt minstens vier bezwaren en brengt ze één voor één in
 
 Ga je akkoord met de koop of een concrete vervolgafspraak, zeg dat dan duidelijk en zet [DEAL] aan het einde van dat bericht.` : '');
   return `${s.role}
-Dit is een oefenrollenspel om een student voor te bereiden. Blijf steeds in je rol. ${s.verkoop ? 'Reageer als klant op wat de verkoper zegt, één punt tegelijk.' : 'Stel één vraag tegelijk en wacht op het antwoord. Reageer kort op elk antwoord (doorvragen mag) en ga dan verder.'} Schrijf in natuurlijk gesproken Nederlands, zonder opsommingen of kopjes, maximaal 4 zinnen per beurt. Toon: ${s.toon}. Het gesprek duurt ongeveer ${s.aantal} ${s.verkoop ? 'beurten' : 'vragen'}; rond daarna af${s.irritant ? '' : ' en zeg dat het gesprek klaar is'}. Geef tijdens het gesprek geen cijfer of beoordeling.${irritant}${stof ? '\n\nSTOF WAAR HET GESPREK OVER GAAT:\n' + stof : ''}`;
+Dit is een oefenrollenspel om een student voor te bereiden. Blijf steeds in je rol. ${s.verkoop ? 'Reageer als klant op wat de verkoper zegt, één punt tegelijk.' : 'Stel één vraag tegelijk en wacht op het antwoord. Reageer kort op elk antwoord (doorvragen mag) en ga dan verder.'} Schrijf in natuurlijk gesproken Nederlands, zonder opsommingen of kopjes, maximaal 4 zinnen per beurt. Toon: ${s.toon}. Het gesprek duurt ongeveer ${s.aantal} ${s.verkoop ? 'beurten' : 'vragen'}; rond daarna af${s.irritant ? '' : ' en zeg dat het gesprek klaar is'}. Geef tijdens het gesprek geen cijfer of beoordeling. De student praat soms in plaats van te typen; zijn tekst is dan automatisch uitgeschreven en kan herkenningsfouten of ontbrekende leestekens bevatten: negeer die en reageer op wat hij bedoelt.${irritant}${stof ? '\n\nSTOF WAAR HET GESPREK OVER GAAT:\n' + stof : ''}`;
 }
 function chatMsgs() {
   let msgs = S.chat.msgs.slice(-40); let total = msgs.reduce((s, m) => s + m.content.length, 0);
@@ -1190,7 +1287,13 @@ async function chatTurn() {
     else if (t.deal) c.over = 'deal';
   }
   catch (e) { aiErr(e); }
-  finally { c.streaming = null; render(); const i = $('#chatIn'); if (i) i.focus(); }
+  finally {
+    c.streaming = null; render();
+    const last = c.msgs[c.msgs.length - 1];
+    const after = () => { if (c.hands && c.phase === 'run' && !c.over && S.tab === 'gesprek') setTimeout(() => startListening(true), 250); };
+    if (last && last.role === 'assistant' && c.read && S.tab === 'gesprek') speak(last.content, after); else after();
+    const i = $('#chatIn'); if (i && !c.hands && !('ontouchstart' in window)) i.focus();
+  }
 }
 async function startChat() {
   const c = S.chat; const s = chatSetup();
@@ -1201,8 +1304,10 @@ async function startChat() {
   await chatTurn();
 }
 async function sendChat() {
+  if (V.listening) { V.listening = false; stopListening(); }
+  stopSpeaking();
   const el = $('#chatIn'); const t = el && el.value.trim(); if (!t) return;
-  el.value = ''; S.chat.msgs.push({ role: 'user', content: t }); await chatTurn();
+  el.value = ''; V.final = ''; V.interim = ''; S.chat.msgs.push({ role: 'user', content: t }); await chatTurn();
 }
 async function chatTip() {
   const c = S.chat; const lastAi = [...c.msgs].reverse().find(m => m.role === 'assistant'); if (!lastAi) return;
@@ -1224,7 +1329,7 @@ async function endChat() {
     const focus = sv.verkoop ? ' Let bij dit verkoopgesprek vooral op: behoefteonderzoek (open vragen, LSD), bezwaarbehandeling, voordelen in plaats van kenmerken, omgaan met kortingsverzoeken en of de student om de deal of een vervolgafspraak vroeg.' : '';
     const hard = sv.irritant ? ` De gesprekspartner was bewust irritant en heel moeilijk; beoordeel ook of de student rustig en professioneel bleef. Uitkomst: ${c.over === 'deal' ? 'de klant ging akkoord' : c.over === 'weg' ? 'de gesprekspartner liep weg' : 'geen duidelijke uitkomst'}${c.geduld != null ? `, eindgeduld ${c.geduld}/10` : ''}.` : (c.over === 'deal' ? ' Uitkomst: de klant ging akkoord.' : '');
     const stof = c.scenario === 'mondeling' ? '\n\nSTOF:\n' + await material([...S.sel.chat], 50000) : '';
-    const r = await aiJson({ kind: 'feedback', prompt: `Hieronder staat een oefengesprek (${c.title}) tussen een student en een AI die de rol van ${c.rol} speelde. Geef de student feedback als ervaren coach. Beoordeel inhoud, structuur, overtuigingskracht en hoe concreet de antwoorden waren${c.scenario === 'mondeling' ? ', en vooral of de inhoud klopt met de stof' : ''}.${focus}${hard} Spreek de student aan met "je".
+    const r = await aiJson({ kind: 'feedback', prompt: `Hieronder staat een oefengesprek (${c.title}) tussen een student en een AI die de rol van ${c.rol} speelde. Geef de student feedback als ervaren coach. Beoordeel inhoud, structuur, overtuigingskracht en hoe concreet de antwoorden waren (de antwoorden kunnen ingesproken en automatisch uitgeschreven zijn: beoordeel spelling en leestekens dus niet)${c.scenario === 'mondeling' ? ', en vooral of de inhoud klopt met de stof' : ''}.${focus}${hard} Spreek de student aan met "je".
 Antwoord met alleen JSON: {"cijfer":7.5,${sv.verkoop ? '"uitkomst":"Deal gesloten" of "Geen deal" of "Vervolgafspraak",' : ''}"samenvatting":"2-3 zinnen","sterk":["...","..."],"beter":["...","..."],"voorbeeld":{"vraag":"het moment of de vraag uit het gesprek waar de student het meest van kan leren","antwoord":"een sterk voorbeeldantwoord, in de ik-vorm"}}
 "cijfer" is op de Nederlandse schaal van 1 tot 10.
 
@@ -1336,7 +1441,7 @@ document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]'); if (!el || el.disabled || $('#app').hidden) return;
   const a = el.dataset.act; const d = el.dataset;
   try {
-  if (a === 'tab') { S.tab = d.tab; S.confirm = null; if (d.tab === 'vakken') S.openVak = null; render(); window.scrollTo(0, 0); return; }
+  if (a === 'tab') { if (d.tab !== 'gesprek') { stopSpeaking(); stopListening(); } S.tab = d.tab; S.confirm = null; if (d.tab === 'vakken') S.openVak = null; render(); window.scrollTo(0, 0); return; }
   if (a === 'pick') { const s = S.sel[d.key]; s.has(d.id) ? s.delete(d.id) : s.add(d.id); render(); return; }
   if (a === 'pickvak') { const s = S.sel[d.key]; const ids = S.docs.filter(x => (x.vak_id || '') === d.vak).map(x => x.id); const all = ids.every(i => s.has(i)); ids.forEach(i => all ? s.delete(i) : s.add(i)); render(); return; }
   if (a === 'seg') { const [obj, key] = d.group.split('.'); const t = obj === 'cards' ? S.cardsSet : S[obj]; t[key] = isNaN(+d.val) ? d.val : +d.val; render(); return; }
@@ -1438,12 +1543,14 @@ document.addEventListener('click', async e => {
   if (a === 'studyend') { S.study = null; render(); return; }
   if (a === 'deckdel') { await q(sb.from('decks').delete().eq('id', d.id)); S.decks = S.decks.filter(x => x.id !== d.id); S.confirm = null; render(); toast('Set verwijderd.'); return; }
   // gesprek
-  if (a === 'chatgo') { await startChat(); return; }
+  if (a === 'chatgo') { unlockSpeech(); await startChat(); return; }
   if (a === 'chatsend') { await sendChat(); return; }
+  if (a === 'mic') { unlockSpeech(); if (V.listening) { stopListening(); } else startListening(false); return; }
+  if (a === 'stopspeak') { stopSpeaking(); return; }
   if (a === 'chattip') { await chatTip(); return; }
-  if (a === 'chatend') { await endChat(); return; }
-  if (a === 'chatnew') { Object.assign(S.chat, { phase: 'setup', msgs: [], over: null, geduld: null }); render(); return; }
-  if (a === 'chatagain') { const c = S.chat; Object.assign(c, { phase: 'run', msgs: [c.msgs[0]], tips: {}, feedback: null, over: null, geduld: c.setupInfo && c.setupInfo.irritant ? 5 : null }); await chatTurn(); return; }
+  if (a === 'chatend') { stopSpeaking(); stopListening(); await endChat(); return; }
+  if (a === 'chatnew') { stopSpeaking(); stopListening(); Object.assign(S.chat, { phase: 'setup', msgs: [], over: null, geduld: null }); render(); return; }
+  if (a === 'chatagain') { unlockSpeech(); stopSpeaking(); const c = S.chat; Object.assign(c, { phase: 'run', msgs: [c.msgs[0]], tips: {}, feedback: null, over: null, geduld: c.setupInfo && c.setupInfo.irritant ? 5 : null }); await chatTurn(); return; }
   // uitleg
   if (a === 'sum') { await summarize(d.kind); return; }
   if (a === 'sumdl') { download(`leerpuls-${S.qa.kind || 'uitleg'}.md`, S.qa.out, 'text/markdown'); return; }
@@ -1473,6 +1580,8 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset && t.dataset.photo) { const files = [...(t.files || [])]; t.value = ''; if (files.length) { const ti = $('#phTitle'); if (ti) S.phTitle = ti.value; const pv = $('#phVak'); if (pv) S.phVak = pv.value; await addPhotos(files); render(); } return; }
   if (t.id === 'phVak') { S.phVak = t.value; return; }
+  if (t.id === 'vRead') { S.chat.read = t.checked; if (!t.checked) stopSpeaking(); else unlockSpeech(); savePrefs(); return; }
+  if (t.id === 'vHands') { S.chat.hands = t.checked; if (t.checked) { S.chat.read = true; unlockSpeech(); } else stopListening(); savePrefs(); render(); return; }
   if (t.dataset && t.dataset.move) {
     const id = t.dataset.move; const vak_id = t.value || null;
     try { await q(sb.from('documents').update({ vak_id }).eq('id', id)); S.docs.find(x => x.id === id).vak_id = vak_id; toast(`Verplaatst naar ${vakNaam(vak_id)}.`); render(); } catch (err) { dbErr(err); }
