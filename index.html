@@ -248,6 +248,30 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .req:first-child{padding-top:0}
 .req .quote{background:var(--paper);border-radius:8px;padding:10px 12px;font-size:.92rem;white-space:pre-wrap;overflow-wrap:anywhere}
 .badge{font-family:var(--f-mono);font-size:.75rem;background:var(--bad);color:#fff;border-radius:20px;padding:0 6px;margin-left:4px}
+.aglayout{display:grid;gap:16px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start}
+@media (max-width:860px){.aglayout{grid-template-columns:1fr}}
+.agmonth{font-family:var(--f-display);font-size:1.05rem;min-width:140px;text-align:center;text-transform:capitalize}
+.aggrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.aghead{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:center;padding:2px 0 6px}
+.agcell{min-height:86px;border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:5px;display:flex;flex-direction:column;gap:3px;text-align:left;cursor:pointer;color:var(--ink);font:inherit;min-width:0;overflow:hidden}
+.agcell.empty{background:transparent;border-color:transparent;cursor:default}
+.agcell.past{opacity:.6}
+.agcell.today{border-color:var(--hl-solid);box-shadow:inset 0 0 0 2px var(--hl-solid)}
+.agcell.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.agnum{font-family:var(--f-mono);font-size:.8rem;font-weight:500}
+.agcell.today .agnum{background:var(--hl-solid);color:var(--on-hl);border-radius:4px;padding:0 4px;align-self:flex-start}
+.agevs{display:grid;gap:2px;min-width:0}
+.agev{font-size:.72rem;line-height:1.25;border-radius:4px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--card);border:1px solid var(--line)}
+.agev.ag-toets{background:var(--bad-bg);border-color:transparent;color:var(--bad);font-weight:700}
+.agev.ag-opdr,.agev.ag-deadline{background:var(--warn-bg);border-color:transparent;color:var(--warn);font-weight:700}
+.agmore{font-size:.7rem;color:var(--muted)}
+.agdots{display:flex;gap:3px;margin-top:auto}
+.agdots i,.legdot{width:7px;height:7px;border-radius:50%;background:var(--pen);display:inline-block}
+.agdots i.done{background:var(--good)}
+.aglegend{gap:14px}
+.calbtns{display:flex;flex-wrap:wrap;gap:8px}
+.calbtns .btn{text-decoration:none;display:inline-block}
+@media (max-width:560px){.agcell{min-height:52px;padding:3px}.agtxt{display:none}.agev{padding:0 3px;text-align:center}.agev.ag-toets,.agev.ag-opdr,.agev.ag-deadline{font-size:.7rem}.agmonth{min-width:0}}
 .steps{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
 .steps div{display:grid;gap:4px;border-top:3px solid var(--hl-solid);padding-top:10px}
 .meter{display:flex;align-items:center;gap:8px}
@@ -336,6 +360,7 @@ async function q(p) { const { data, error } = await p; if (error) throw error; r
 const S = {
   tab: 'vandaag', user: null, account: null, isAdmin: false, isDocent: false,
   klas: null, kdocs: [], opdr: [], myRes: [], klasErr: false,
+  ag: { month: new Date().toLocaleDateString('sv-SE').slice(0, 7), sel: new Date().toLocaleDateString('sv-SE'), plan: (() => { try { return localStorage.getItem('lp_agplan') !== '0'; } catch { return true; } })() },
   T: { klassen: [], sel: null, sub: 'opdrachten', leerlingen: {}, res: {}, openOpd: null, pick: new Set(), vak: '', form: { type: 'toets', n: 10, soort: 'mix', niveau: 'toets', scenario: 'verkoop', toon: 'neutraal', lengte: 'normaal' } },
   vakken: [], docs: [], texts: {}, decks: [], results: [], sessions: [], exams: [], days: new Set(),
   ai: { used: 0, limit: 0, unlimited: false },
@@ -763,7 +788,7 @@ async function handleFiles(files, vakId, title) {
 
 /* ================= weergaven ================= */
 function tabs() {
-  const t = [['vandaag', 'Vandaag'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
+  const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
   if (S.isAdmin) t.push(['beheer', 'Beheer', pendingReqs().length]);
   t.push(['account', 'Account']);
   return t;
@@ -777,7 +802,7 @@ function view() {
   h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
   <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
   h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && pendingReqs().length ? `<span class="badge" aria-label="nieuwe aanvragen">${pendingReqs().length}</span>` : ''}</button>`).join('')}</nav>`;
-  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, account: vAccount })[S.tab]();
+  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, account: vAccount })[S.tab]();
   return h;
 }
 function picker(key, hint) {
@@ -829,12 +854,12 @@ function vVandaag() {
     ${exams.length ? `<div class="list">${exams.map(e => {
       const done = (e.plan || []).filter(t => t.done).length, tot = (e.plan || []).length; const conf = S.confirm === 'exam:' + e.id;
       return `<div class="item"><div class="main"><span class="t row" style="gap:8px"><span class="vakdot" style="--vc:${vakColor(e.vak_id)}"></span>${esc(e.naam)}</span><span class="small muted">${esc(vakNaam(e.vak_id))} · ${new Date(e.datum + 'T00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}${tot ? ` · leerplan ${done}/${tot}` : ''}</span></div>
-      <span class="pill ${e.days <= 3 ? 'bad' : e.days <= 10 ? 'warn' : ''}">${e.days === 0 ? 'vandaag' : e.days === 1 ? 'morgen' : 'nog ' + e.days + ' dagen'}</span>
+      <span class="pill ${e.days <= 3 ? 'bad' : e.days <= 10 ? 'warn' : ''}">${e.days === 0 ? 'vandaag' : e.days === 1 ? 'morgen' : 'nog ' + e.days + ' dagen'}</span><button class="btn sm ghost" data-act="ics" data-id="${e.id}" title="Zet deze toets in je eigen agenda" aria-label="Zet ${esc(e.naam)} in je eigen agenda">📅</button>
       ${conf ? `<button class="btn sm danger" data-act="examdel" data-id="${e.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
       `<button class="btn sm" data-act="examquiz" data-vak="${e.vak_id || ''}">Oefen</button>${tot ? `<button class="btn sm ghost" data-act="planopen" data-id="${e.id}">${S.openPlan === e.id ? 'Sluit plan' : 'Leerplan'}</button>` : `<button class="btn sm ghost" data-act="planmake" data-id="${e.id}" ${S.busy ? 'disabled' : ''}>Maak leerplan</button>`}<button class="link small" data-act="confirm" data-key="exam:${e.id}">Verwijder</button>`}
       ${S.openPlan === e.id && tot ? `<div class="plan" style="flex-basis:100%">${e.plan.map((t, i) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span class="tt" style="flex:1">${esc(t.taak)}</span><span class="d">${fmtDay(t.datum)}</span></button>`).join('')}<div><button class="link small" data-act="planmake" data-id="${e.id}">Maak een nieuw leerplan</button></div></div>` : ''}</div>`;
     }).join('')}</div>` : `<p class="muted small">Zet je toetsen erin. Je ziet hoeveel dagen je nog hebt en Leerpuls maakt een leerplan per dag tot de toets.</p>`}
-    <div class="fields"><label class="field"><span>Vak</span><select id="exVak">${vakOptions(null)}</select></label><label class="field"><span>Toets</span><input id="exNaam" placeholder="bijv. Tentamen blok 2"></label><label class="field"><span>Datum</span><input id="exDatum" type="date" min="${todayStr()}"></label></div>
+    <div class="fields"><label class="field"><span>Vak</span><select id="exVak">${vakOptions(null)}</select></label><label class="field"><span>Toets</span><input id="exNaam" placeholder="bijv. Tentamen blok 2"></label><label class="field"><span>Datum</span><input id="exDatum" type="date" min="${todayStr()}"></label><label class="field"><span>Tijd (optioneel)</span><input id="exTijd" type="time"></label></div>
     <div><button class="btn ghost" data-act="examadd">Toets toevoegen</button></div></section>`;
   h += `<section class="panel"><h3>Herhalen</h3>${S.decks.length ? `<p>${due ? `<span class="mark"><b>${plural(due, 'kaart', 'kaarten')}</b></span> staan klaar om te herhalen.` : 'Alle kaarten zijn voor vandaag herhaald. Goed bezig.'}</p>
     <div class="row">${due ? `<button class="btn hl" data-act="study" data-deck="">Start herhaling</button>` : ''}<button class="btn ghost" data-act="tab" data-tab="kaarten">Naar flashcards</button></div>` : `<p class="muted small">Maak flashcards van je stof. Leerpuls laat elke kaart terugkomen op het juiste moment, zodat je minder vergeet.</p><div><button class="btn ghost" data-act="tab" data-tab="kaarten">Flashcards maken</button></div>`}</section>`;
@@ -1186,6 +1211,7 @@ function vAccount() {
     <p class="small muted">Alleen het cijfer en de uitkomst van opdrachten die je docent klaarzet. Je eigen stof, flashcards en oefeningen blijven altijd privé.</p>
     <div>${S.klas.deelt_resultaten ? `<button class="btn ghost" data-act="share" data-v="0">Stop met delen</button>` : `<button class="btn" data-act="share" data-v="1">Deel mijn opdrachtresultaten</button>`}</div></section>` : ''}
   ${S.isDocent ? `<section class="panel"><h3>Docentaccount</h3><p class="small muted">Je beheert ${plural(S.T.klassen.length, 'klas', 'klassen')}. Klassen koppelen gebeurt door de beheerder (${OWNER}).</p></section>` : ''}
+  <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label><div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
   <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw.</p></section>
   <section class="panel"><h3>Privacy</h3><p class="small muted">Je stof, antwoorden en gesprekken zijn alleen voor jou zichtbaar. Beheerders zien alleen aantallen.</p><div class="row"><button class="btn ghost" data-act="export">Download al mijn gegevens</button><button class="btn" data-act="logout">Uitloggen</button></div></section>
   </div></div>`;
@@ -1196,7 +1222,7 @@ let scrollChat = false;
 function render() {
   const root = $('#app'); if (root.hidden) return;
   const keep = {};
-  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
   const act = document.activeElement; const fid = act && root.contains(act) && act.id;
   let ss, se; try { ss = act.selectionStart; se = act.selectionEnd; } catch {}
   const openDetails = [...root.querySelectorAll('details')].map(d => d.open);
@@ -1832,6 +1858,113 @@ function klassenSection() {
     ${docenten.filter(d => d.role === 'docent').length ? '' : `<p class="small muted">Er zijn nog geen docenten. Docenten vragen toegang aan via het inlogscherm ("Ik ben docent"), of je maakt ze hieronder aan met de rol Docent.</p>`}</section>`;
 }
 
+/* ================= agenda ================= */
+const MAANDEN = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
+const DAGEN = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
+function agendaItems() {
+  const out = [];
+  for (const e of S.exams) {
+    out.push({ date: e.datum, kind: 'toets', id: e.id, title: e.naam, sub: [vakNaam(e.vak_id), e.tijd ? e.tijd.slice(0, 5) : '', e.locatie].filter(Boolean).join(' · '), time: e.tijd || '' });
+    (e.plan || []).forEach((t, i) => out.push({ date: t.datum, kind: 'plan', id: e.id, i, title: t.taak, sub: 'Leerplan · ' + e.naam, done: t.done }));
+  }
+  for (const o of myOpdr()) if (o.deadline) out.push({ date: o.deadline, kind: 'opdr', id: o.id, title: o.titel, sub: 'Opdracht inleveren · ' + TYPE_LABEL[o.type], done: opdrResults(o.id).length > 0 });
+  if (isTeacher()) { const mine = new Set(S.T.klassen.map(k => k.id)); for (const o of S.opdr) if (o.deadline && mine.has(o.klas_id) && !(S.klas && o.klas_id === S.klas.klas_id)) out.push({ date: o.deadline, kind: 'deadline', id: o.id, title: o.titel, sub: 'Deadline · ' + klasNaam(o.klas_id) }); }
+  const order = { toets: 0, opdr: 1, deadline: 2, plan: 3 };
+  return out.filter(x => x.date).sort((a, b) => a.date.localeCompare(b.date) || order[a.kind] - order[b.kind] || (a.time || '').localeCompare(b.time || ''));
+}
+const AG_ICON = { toets: '📝', plan: '📖', opdr: '📌', deadline: '📌' };
+function agendaUrl() {
+  const tok = S.account && S.account.agenda_token; if (!tok) return null;
+  return `${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.AGENDA_FUNCTION || 'Agenda'}?token=${tok}${S.ag.plan ? '' : '&leerplan=0'}`;
+}
+function agItem(x) {
+  let act = '';
+  if (x.kind === 'toets') act = `<button class="btn sm ghost" data-act="examquiz" data-vak="${(S.exams.find(e => e.id === x.id) || {}).vak_id || ''}">Oefen</button><button class="btn sm ghost" data-act="ics" data-id="${x.id}" title="Zet deze toets in je eigen agenda">📅 In agenda</button>`;
+  if (x.kind === 'plan') act = `<button class="btn sm ${x.done ? 'ghost' : ''}" data-act="plantoggle" data-exam="${x.id}" data-i="${x.i}">${x.done ? 'Gedaan ✓' : 'Afvinken'}</button>`;
+  if (x.kind === 'opdr') act = `<button class="btn sm ${x.done ? 'ghost' : 'hl'}" data-act="opdrstart" data-id="${x.id}">${x.done ? 'Opnieuw' : 'Start'}</button>`;
+  if (x.kind === 'deadline') act = `<button class="btn sm ghost" data-act="klassel" data-id="${(S.opdr.find(o => o.id === x.id) || {}).klas_id}" data-go="1">Bekijk</button>`;
+  return `<div class="item ag-${x.kind}"><div class="main"><span class="t">${AG_ICON[x.kind]} ${esc(x.title)}${x.done && x.kind !== 'plan' ? ' <span class="pill good">gemaakt</span>' : ''}</span><span class="small muted">${esc(x.sub)}</span></div>${act}</div>`;
+}
+function vAgenda() {
+  const ag = S.ag; const items = agendaItems(); const today = todayStr();
+  const [y, m] = ag.month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1); const startOffset = (first.getDay() + 6) % 7; const daysIn = new Date(y, m, 0).getDate();
+  const byDay = {}; items.forEach(x => (byDay[x.date] = byDay[x.date] || []).push(x));
+  let cells = '';
+  for (let i = 0; i < startOffset; i++) cells += `<div class="agcell empty" aria-hidden="true"></div>`;
+  for (let dnum = 1; dnum <= daysIn; dnum++) {
+    const ds = `${y}-${String(m).padStart(2, '0')}-${String(dnum).padStart(2, '0')}`; const its = byDay[ds] || [];
+    const main = its.filter(x => x.kind !== 'plan'); const plans = its.filter(x => x.kind === 'plan');
+    cells += `<button class="agcell ${ds === today ? 'today' : ''} ${ds === ag.sel ? 'sel' : ''} ${ds < today ? 'past' : ''}" data-act="agday" data-d="${ds}" aria-label="${dnum} ${MAANDEN[m - 1]}${its.length ? ', ' + plural(its.length, 'item', 'items') : ''}">
+      <span class="agnum">${dnum}</span>
+      <span class="agevs">${main.slice(0, 2).map(x => `<span class="agev ag-${x.kind}">${AG_ICON[x.kind]} <span class="agtxt">${esc(x.title)}</span></span>`).join('')}${main.length > 2 ? `<span class="agmore">+${main.length - 2}</span>` : ''}</span>
+      ${plans.length ? `<span class="agdots">${plans.slice(0, 3).map(p => `<i class="${p.done ? 'done' : ''}"></i>`).join('')}</span>` : ''}</button>`;
+  }
+  const selItems = byDay[ag.sel] || [];
+  const upcoming = items.filter(x => x.date >= today && x.date <= addDaysStr(today, 30) && x.kind !== 'plan');
+  const url = agendaUrl();
+  let h = `<div class="stack"><div class="row between"><h2>Agenda</h2><div class="row"><button class="btn sm ghost" data-act="agnav" data-n="-1" aria-label="Vorige maand">‹</button><b class="agmonth">${MAANDEN[m - 1]} ${y}</b><button class="btn sm ghost" data-act="agnav" data-n="1" aria-label="Volgende maand">›</button><button class="btn sm ghost" data-act="agnav" data-n="0">Vandaag</button></div></div>
+  <div class="aglayout"><section class="panel agpanel"><div class="aggrid">${DAGEN.map(dn => `<div class="aghead">${dn}</div>`).join('')}${cells}</div>
+    <div class="row small muted aglegend"><span>📝 toets</span><span>📌 opdracht</span><span><i class="legdot"></i> leerplan-taak</span></div></section>
+  <section class="panel"><h3>${new Date(ag.sel + 'T12:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
+    ${selItems.length ? `<div class="list">${selItems.map(agItem).join('')}</div>` : `<p class="small muted">Niets gepland op deze dag.</p>`}
+    ${ag.sel >= today ? `<details ${selItems.length ? '' : 'open'}><summary class="link small" style="cursor:pointer">+ Toets op deze dag inplannen</summary><div class="stack" style="margin-top:10px">
+      <div class="fields"><label class="field"><span>Vak</span><select id="agVak">${vakOptions(null)}</select></label><label class="field"><span>Toets</span><input id="agNaam" placeholder="bijv. Tentamen blok 2"></label></div>
+      <div class="fields"><label class="field"><span>Tijd (optioneel)</span><input id="agTijd" type="time"></label><label class="field"><span>Locatie (optioneel)</span><input id="agLoc" placeholder="bijv. Zaal 2.14"></label></div>
+      <div><button class="btn" data-act="agadd">Toets inplannen</button></div>
+      <p class="small muted">${S.account.mail_herinneringen === false ? 'Herinneringsmails staan uit (aanzetten bij Account).' : 'Je krijgt een mail nu, en 20, 10, 5 en 1 dag(en) voor de toets.'}</p></div></details>` : ''}</section></div>
+  <section class="panel"><h3>Komende 30 dagen</h3>${upcoming.length ? `<div class="list">${upcoming.map(x => `<div class="item"><span class="mono small" style="min-width:86px">${fmtDay(x.date)}</span><div class="main"><span class="t">${AG_ICON[x.kind]} ${esc(x.title)}</span><span class="small muted">${esc(x.sub)}</span></div><span class="pill ${daysUntil(x.date) <= 3 ? 'bad' : daysUntil(x.date) <= 10 ? 'warn' : ''}">${daysUntil(x.date) === 0 ? 'vandaag' : daysUntil(x.date) === 1 ? 'morgen' : 'over ' + daysUntil(x.date) + ' d'}</span></div>`).join('')}</div>` : `<p class="small muted">Geen toetsen of deadlines in de komende 30 dagen.</p>`}</section>
+  <section class="panel" id="koppelen"><h3>Koppel aan je eigen agenda</h3>
+    ${url ? `<p class="small">Abonneer op je persoonlijke Leerpuls-agenda. Nieuwe toetsen, deadlines${S.ag.plan ? ' en leerplan-taken' : ''} verschijnen dan vanzelf in je eigen agenda, met een melding vooraf.</p>
+    <div class="calbtns">
+      <a class="btn" href="https://calendar.google.com/calendar/render?cid=${encodeURIComponent(url.replace(/^https?:/, 'webcal:'))}" target="_blank" rel="noopener">Google Agenda</a>
+      <a class="btn" href="${esc(url.replace(/^https?:/, 'webcal:'))}">Apple Agenda / iPhone</a>
+      <a class="btn" href="https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(url)}&amp;name=Leerpuls" target="_blank" rel="noopener">Outlook</a>
+      <a class="btn ghost" href="https://outlook.office.com/calendar/0/addfromweb?url=${encodeURIComponent(url)}&amp;name=Leerpuls" target="_blank" rel="noopener">Outlook (school/werk)</a></div>
+    <label class="check"><input type="checkbox" id="agPlan" ${S.ag.plan ? 'checked' : ''}><span>Leerplan-taken ook in mijn agenda zetten</span></label>
+    <div class="row" style="align-items:stretch"><input id="agUrl" readonly value="${esc(url)}" style="flex:1 1 260px;font-family:var(--f-mono);font-size:.8rem"><button class="btn ghost" data-act="agcopy">Kopieer link</button></div>
+    <details><summary class="link small" style="cursor:pointer">Hoe werkt het?</summary><div class="small stack" style="margin-top:8px;gap:6px">
+      <p><b>Google Agenda:</b> klik op de knop en kies "Toevoegen". Op Android verschijnt de agenda daarna vanzelf in de Google Agenda-app (zet hem aan bij Instellingen als je hem niet ziet). Google ververst een geabonneerde agenda zelf, meestal binnen een paar uur.</p>
+      <p><b>iPhone/Mac:</b> tik op "Apple Agenda / iPhone" en daarna op "Abonneer". Zet eventueel bij Instellingen → Agenda → Accounts → Geabonneerde agenda's het ophalen op "Elk uur".</p>
+      <p><b>Outlook:</b> klik op de knop en bevestig "Importeren"/"Toevoegen". Gebruik "school/werk" als je met een school- of Microsoft 365-account inlogt.</p>
+      <p><b>Andere agenda:</b> kopieer de link en kies in je agenda "Agenda toevoegen via URL" of "Abonneren".</p>
+      <p>Houd de link voor jezelf: wie hem heeft, kan je toetsen en deadlines zien. Gedeeld per ongeluk? Maak een nieuwe link; de oude werkt dan direct niet meer.</p></div></details>
+    <div class="row"><button class="link small" data-act="agnewtoken">Nieuwe link maken</button></div>` : `<div class="notice">Agenda-koppeling is nog niet ingesteld. De beheerder moet <b>agenda.sql</b> in Supabase draaien.</div>`}</section>
+  <section class="panel"><h3>Herinneringen per mail</h3>
+    <label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Stuur mij een mail als een toets is ingepland, en 20, 10, 5 en 1 dag(en) van tevoren${S.klas ? '. Ook voor opdrachten van je docent die je nog niet hebt gemaakt' : ''}.</span></label>
+    <div><button class="btn ghost sm" data-act="testmail" ${S.busy ? 'disabled' : ''}>Stuur mij een testherinnering</button></div></section></div>`;
+  return h;
+}
+function addDaysStr(s, n) { const d = new Date(s + 'T12:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('sv-SE'); }
+function icsEscape(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+function icsFold(line) { const enc = new TextEncoder(); if (enc.encode(line).length <= 75) return line; const out = []; let cur = '', len = 0, lim = 75; for (const ch of line) { const n = enc.encode(ch).length; if (len + n > lim) { out.push(cur); cur = ''; len = 0; lim = 74; } cur += ch; len += n; } out.push(cur); return out.join('\r\n '); }
+function examIcs(e) {
+  const vak = e.vak_id ? vakNaam(e.vak_id) : ''; const d8 = e.datum.replace(/-/g, ''); const next = addDaysStr(e.datum, 1).replace(/-/g, '');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const TZ = ['BEGIN:VTIMEZONE', 'TZID:Europe/Amsterdam', 'BEGIN:DAYLIGHT', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0200', 'TZNAME:CEST', 'DTSTART:19700329T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU', 'END:DAYLIGHT', 'BEGIN:STANDARD', 'TZOFFSETFROM:+0200', 'TZOFFSETTO:+0100', 'TZNAME:CET', 'DTSTART:19701025T030000', 'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU', 'END:STANDARD', 'END:VTIMEZONE'];
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Deekman Enterprises//Leerpuls//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...(e.tijd ? TZ : []), 'BEGIN:VEVENT', `UID:toets-${e.id}@leerpuls.deekmanenterprises.com`, `DTSTAMP:${stamp}`];
+  if (e.tijd) { const [hh, mm] = e.tijd.split(':'); const endH = String(Math.min(23, +hh + 2)).padStart(2, '0'); L.push(`DTSTART;TZID=Europe/Amsterdam:${d8}T${hh}${mm}00`, `DTEND;TZID=Europe/Amsterdam:${d8}T${endH}${mm}00`); }
+  else L.push(`DTSTART;VALUE=DATE:${d8}`, `DTEND;VALUE=DATE:${next}`);
+  L.push(`SUMMARY:${icsEscape('📝 ' + e.naam + (vak ? ' (' + vak + ')' : ''))}`, `DESCRIPTION:${icsEscape('Toets uit je Leerpuls-toetsplanner.\n' + location.origin + '/')}`);
+  if (e.locatie) L.push(`LOCATION:${icsEscape(e.locatie)}`);
+  for (const n of [20, 10, 5, 1]) {
+    const trig = e.tijd ? `-P${n}D` : (n === 1 ? '-PT15H' : `-P${n - 1}DT15H`); // hele dag: N dagen vooraf om 09:00
+    L.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(`Nog ${n} ${n === 1 ? 'dag' : 'dagen'}: ${e.naam}`)}`, `TRIGGER:${trig}`, 'END:VALARM');
+  }
+  L.push('END:VEVENT', 'END:VCALENDAR');
+  return L.map(icsFold).join('\r\n') + '\r\n';
+}
+async function sendTestMail() {
+  const { data: { session } } = await sb.auth.getSession();
+  setBusy('Testherinnering versturen…');
+  try {
+    const res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.REMINDER_FUNCTION || 'Herinneringen'}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY }, body: JSON.stringify({ action: 'test' }) });
+    if (res.ok) toast(`Testherinnering verstuurd naar ${S.account.email}. Kijk ook even in je spam.`, 7000);
+    else toast(res.status === 404 ? 'De Edge Function "Herinneringen" bestaat nog niet.' : 'Versturen lukte niet. Controleer RESEND_API_KEY bij de Edge Function-secrets.', 8000);
+  } catch { toast('Geen verbinding met de Edge Function "Herinneringen".', 7000); }
+  finally { setBusy(null); }
+}
+
 /* ================= gebeurtenissen ================= */
 document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]'); if (!el || el.disabled || $('#app').hidden) return;
@@ -1898,10 +2031,11 @@ document.addEventListener('click', async e => {
   if (a === 'ask') { S.sel.qa = new Set([d.id]); S.tab = 'uitleg'; render(); window.scrollTo(0, 0); return; }
   // toetsplanner
   if (a === 'examadd') {
-    const vak_id = $('#exVak').value || null, naam = $('#exNaam').value.trim(), datum = $('#exDatum').value;
+    const vak_id = $('#exVak').value || null, naam = $('#exNaam').value.trim(), datum = $('#exDatum').value, tijd = ($('#exTijd') && $('#exTijd').value) || null;
     if (!naam || !datum) { toast('Vul de naam van de toets en de datum in.'); return; }
-    const row = await q(sb.from('exams').insert({ vak_id, naam, datum }).select().single());
-    S.exams.push(row); $('#exNaam').value = ''; $('#exDatum').value = ''; render(); toast('Toets toegevoegd. Klik op "Maak leerplan" voor een planning per dag.', 6000); return;
+    const row = await q(sb.from('exams').insert({ vak_id, naam, datum, ...(tijd ? { tijd } : {}) }).select().single());
+    S.exams.push(row); $('#exNaam').value = ''; $('#exDatum').value = ''; if ($('#exTijd')) $('#exTijd').value = ''; render();
+    toast(`Toets toegevoegd${S.account.mail_herinneringen === false ? '' : '. Je krijgt herinneringen per mail'}. Klik op "Maak leerplan" voor een planning per dag.`, 7000); return;
   }
   if (a === 'examdel') { await q(sb.from('exams').delete().eq('id', d.id)); S.exams = S.exams.filter(x => x.id !== d.id); S.confirm = null; render(); return; }
   if (a === 'examquiz') { const ids = S.docs.filter(x => (x.vak_id || '') === d.vak).map(x => x.id); S.sel.quiz = new Set(ids); S.quiz.phase = 'setup'; S.tab = 'toets'; render(); if (!ids.length) toast('Je hebt nog geen stof bij dit vak. Voeg die toe bij Vakken.', 6000); return; }
@@ -1954,6 +2088,19 @@ document.addEventListener('click', async e => {
   if (a === 'qaclear') { S.qa.msgs = []; render(); return; }
   // beheer
   if (a === 'adminreload') { S.admin.rows = null; render(); return; }
+  // agenda
+  if (a === 'agnav') { const n = +d.n; if (!n) { S.ag.month = todayStr().slice(0, 7); S.ag.sel = todayStr(); } else { const [yy, mm] = S.ag.month.split('-').map(Number); const dt = new Date(yy, mm - 1 + n, 1); S.ag.month = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; } render(); return; }
+  if (a === 'agday') { S.ag.sel = d.d; render(); if (window.innerWidth < 860) { const p = document.querySelector('.aglayout > section:nth-child(2)'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' }); } return; }
+  if (a === 'agadd') {
+    const naam = $('#agNaam').value.trim(); if (!naam) { toast('Vul de naam van de toets in.'); return; }
+    const tijd = $('#agTijd').value || null, locatie = $('#agLoc').value.trim();
+    const row = await q(sb.from('exams').insert({ vak_id: $('#agVak').value || null, naam, datum: S.ag.sel, ...(tijd ? { tijd } : {}), ...(locatie ? { locatie } : {}) }).select().single());
+    S.exams.push(row); ['agNaam', 'agTijd', 'agLoc'].forEach(id => { const el = $('#' + id); if (el) el.value = ''; }); render(); toast(`${naam} ingepland op ${fmtDay(S.ag.sel)}${S.account.mail_herinneringen === false ? '' : '. Je krijgt herinneringen per mail'}.`, 7000); return;
+  }
+  if (a === 'ics') { const e = S.exams.find(x => x.id === d.id); if (e) download(`${e.naam.replace(/[^\w\- ]+/g, '').trim() || 'toets'}.ics`, examIcs(e), 'text/calendar'); return; }
+  if (a === 'agcopy') { const u = $('#agUrl'); try { await navigator.clipboard.writeText(u.value); toast('Agendalink gekopieerd.'); } catch { u.select(); toast('Selecteer en kopieer de link handmatig.'); } return; }
+  if (a === 'agnewtoken') { const { data, error } = await sb.rpc('nieuw_agenda_token'); if (error) { dbErr(error); return; } S.account.agenda_token = data; render(); toast('Nieuwe agendalink gemaakt. De oude link werkt niet meer; koppel je agenda opnieuw.', 8000); return; }
+  if (a === 'testmail') { await sendTestMail(); return; }
   // klassen en opdrachten
   if (a === 'share') { const v = d.v === '1'; await q(sb.rpc('set_delen', { p: v })); if (S.klas) S.klas.deelt_resultaten = v; toast(v ? 'Je docent kan nu je opdrachtresultaten zien.' : 'Je docent ziet je resultaten niet.'); render(); return; }
   if (a === 'opdrstart') { await startOpdracht(d.id); return; }
@@ -2006,6 +2153,8 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset && t.dataset.photo) { const files = [...(t.files || [])]; t.value = ''; if (files.length) { const ti = $('#phTitle'); if (ti) S.phTitle = ti.value; const pv = $('#phVak'); if (pv) S.phVak = pv.value; await addPhotos(files); render(); } return; }
   if (t.id === 'phVak') { S.phVak = t.value; return; }
+  if (t.id === 'mailRem') { try { await q(sb.rpc('set_mail_herinneringen', { p: t.checked })); S.account.mail_herinneringen = t.checked; toast(t.checked ? 'Herinneringsmails staan aan.' : 'Herinneringsmails staan uit.'); render(); } catch (err) { dbErr(err); } return; }
+  if (t.id === 'agPlan') { S.ag.plan = t.checked; try { localStorage.setItem('lp_agplan', t.checked ? '1' : '0'); } catch {} render(); toast('Link aangepast. Koppel je agenda opnieuw met de nieuwe link als je dit wilt toepassen.', 7000); return; }
   if (t.dataset && t.dataset.linksel) { if (!t.value) return; try { await q(sb.from('klas_docenten').insert({ klas_id: t.dataset.linksel, docent_email: t.value })); await loadAdminKlassen(); await loadKlasData(); toast('Docent gekoppeld aan de klas.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.klasof) { try { await q(sb.from('accounts').update({ klas_id: t.value || null }).eq('email', t.dataset.klasof)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.klasof); if (r) r.klas_id = t.value || null; await loadAdminKlassen(); toast(t.value ? `In klas ${klasNaam(t.value)} gezet.` : 'Uit de klas gehaald.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.rolesel) { try { await q(sb.from('accounts').update({ role: t.value }).eq('email', t.dataset.rolesel)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.rolesel); if (r) r.role = t.value; toast('Rol aangepast.'); render(); } catch (err) { dbErr(err); toast('Rol aanpassen lukte niet. Is docenten.sql al gedraaid?', 7000); } return; }
