@@ -222,6 +222,14 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .mobile-panel{display:none}
 @media (max-width:760px),(pointer:coarse){.mobile-panel{display:grid}}
 .mobile-panel.force{display:grid}
+.mood{display:grid;gap:6px;padding:12px 14px;border-radius:var(--r);background:var(--paper);border:1px solid var(--line)}
+.mood .bar{height:10px}
+.mood .bar i{transition:width .4s ease}
+.mood.low .bar i{background:var(--bad)} .mood.mid .bar i{background:var(--warn)} .mood.high .bar i{background:var(--good)}
+.outcome{border-radius:var(--r);padding:14px 16px;font-weight:700;text-align:center}
+.outcome.deal{background:var(--good-bg);color:var(--good)} .outcome.weg{background:var(--bad-bg);color:var(--bad)}
+.hint-irritant{border-left:4px solid var(--bad);padding:8px 12px;font-size:.9rem;background:var(--bad-bg);border-radius:0 8px 8px 0}
+@media (prefers-reduced-motion: reduce){.mood .bar i{transition:none}}
 .steps{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
 .steps div{display:grid;gap:4px;border-top:3px solid var(--hl-solid);padding-top:10px}
 .meter{display:flex;align-items:center;gap:8px}
@@ -316,7 +324,7 @@ const S = {
   photos: [], photoUrls: {}, phVak: '', phTitle: '',
   quiz: { phase: 'setup', n: 10, soort: 'mix', niveau: 'toets' },
   cardsSet: { n: 15 }, study: null,
-  chat: { phase: 'setup', scenario: 'mondeling', toon: 'neutraal', lengte: 'normaal', msgs: [], tips: {} },
+  chat: { phase: 'setup', scenario: 'verkoop', toon: 'neutraal', lengte: 'normaal', msgs: [], tips: {} },
   qa: { msgs: [], out: '' },
   admin: { rows: null, newRole: 'student', bulk: false }
 };
@@ -883,30 +891,46 @@ function vKaarten() {
 
 /* ---- Gesprek ---- */
 const SCEN = {
+  verkoop: { t: 'Verkoopgesprek', d: 'Overtuig een klant van jouw product of dienst.' },
   mondeling: { t: 'Mondeling tentamen', d: 'Een examinator ondervraagt je over je stof.' },
   sollicitatie: { t: 'Sollicitatiegesprek', d: 'Voor een bijbaan, stage of eerste baan.' },
   presentatie: { t: 'Vragen na presentatie', d: 'Een docent of jury stelt kritische vragen.' },
   stage: { t: 'Stage- of beoordelingsgesprek', d: 'Met je stagebegeleider of praktijkbegeleider.' },
   eigen: { t: 'Eigen situatie', d: 'Beschrijf zelf het gesprek dat je wilt oefenen.' }
 };
+const TAG_RE = /\[(GEDULD|DEAL|WEG)[^\]]*\]/gi;
+function cleanTags(t) { return String(t || '').replace(TAG_RE, '').replace(/\[[A-Z]{0,6}:?[^\]\n]*$/i, '').trim(); }
+function readTags(t) {
+  const out = {}; const g = String(t).match(/\[GEDULD:\s*(\d+)/i); if (g) out.geduld = Math.max(0, Math.min(10, +g[1]));
+  if (/\[DEAL\]/i.test(t)) out.deal = true; if (/\[WEG\]/i.test(t)) out.weg = true; return out;
+}
+function moodBar(c) {
+  if (c.geduld == null) return '';
+  const g = c.geduld; const cls = g <= 3 ? 'low' : g <= 6 ? 'mid' : 'high';
+  const face = g <= 2 ? '😤' : g <= 4 ? '😠' : g <= 6 ? '😐' : g <= 8 ? '🙂' : '😀';
+  return `<div class="mood ${cls}" role="status" aria-label="Geduld van de ${esc(c.rol.toLowerCase())}: ${g} van 10"><div class="row between"><span class="small"><b>Geduld van de ${esc(c.rol.toLowerCase())}</b></span><span class="mono small">${face} ${g}/10</span></div><div class="bar"><i style="width:${g * 10}%"></i></div></div>`;
+}
 function vGesprek() {
   const c = S.chat;
   if (c.phase === 'run' || c.phase === 'feedback') {
-    let h = `<div class="stack"><div class="row between"><h2>${esc(c.title)}</h2><button class="btn sm ghost" data-act="chatnew">Nieuw gesprek</button></div><section class="panel"><div class="chat" id="chatBox">`;
+    let h = `<div class="stack"><div class="row between"><h2>${esc(c.title)}</h2><button class="btn sm ghost" data-act="chatnew">Nieuw gesprek</button></div><section class="panel">${moodBar(c)}<div class="chat" id="chatBox">`;
     c.msgs.forEach((m, k) => {
       if (k === 0 && m.role === 'user') return;
-      h += `<div class="msg ${m.role === 'assistant' ? 'ai' : 'me'}"><div class="who-l">${m.role === 'assistant' ? esc(c.rol) : 'Jij'}</div>${esc(m.content)}</div>`;
+      h += `<div class="msg ${m.role === 'assistant' ? 'ai' : 'me'}"><div class="who-l">${m.role === 'assistant' ? esc(c.rol) : 'Jij'}</div>${esc(m.role === 'assistant' ? cleanTags(m.content) : m.content)}</div>`;
       if (c.tips[k]) h += `<div class="msg tip"><b>Tip:</b> ${esc(c.tips[k])}</div>`;
     });
-    if (c.streaming != null) h += `<div class="msg ai"><div class="who-l">${esc(c.rol)}</div><span id="streamOut">${esc(c.streaming || '…')}</span></div>`;
+    if (c.streaming != null) h += `<div class="msg ai"><div class="who-l">${esc(c.rol)}</div><span id="streamOut">${esc(cleanTags(c.streaming) || '…')}</span></div>`;
     h += `</div>`;
+    if (c.over === 'deal') h += `<div class="outcome deal">🤝 Deal! De ${esc(c.rol.toLowerCase())} gaat akkoord. Vraag nu je feedback op.</div>`;
+    if (c.over === 'weg') h += `<div class="outcome weg">🚪 De ${esc(c.rol.toLowerCase())} is weggelopen. Bekijk in de feedback wat je anders kunt doen.</div>`;
     const lock = S.busy || c.streaming != null;
-    if (c.phase === 'run') h += `<label class="field"><span>Jouw antwoord</span><textarea id="chatIn" placeholder="Antwoord zoals je het in het echt zou zeggen. Enter = versturen, Shift+Enter = nieuwe regel"></textarea></label>
+    if (c.phase === 'run' && c.over) h += `<div class="row"><button class="btn hl" data-act="chatend" ${lock ? 'disabled' : ''}>Bekijk je feedback</button><button class="btn ghost" data-act="chatagain" ${lock ? 'disabled' : ''}>Probeer opnieuw</button></div>`;
+    else if (c.phase === 'run') h += `<label class="field"><span>Jouw antwoord</span><textarea id="chatIn" placeholder="Antwoord zoals je het in het echt zou zeggen. Enter = versturen, Shift+Enter = nieuwe regel"></textarea></label>
       <div class="row"><button class="btn" data-act="chatsend" ${lock ? 'disabled' : ''}>Verstuur</button><button class="btn ghost" data-act="chattip" ${lock ? 'disabled' : ''}>Geef een tip</button><button class="btn hl" data-act="chatend" ${lock || c.msgs.length < 4 ? 'disabled' : ''}>Rond af en krijg feedback</button></div>`;
     h += `</section>`;
     if (c.phase === 'feedback' && c.feedback) {
       const f = c.feedback;
-      h += `<section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(f.cijfer)}">${fmtCijfer(f.cijfer)}</span><p style="flex:1 1 240px">${esc(f.samenvatting)}</p></div>
+      h += `<section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(f.cijfer)}">${fmtCijfer(f.cijfer)}</span><div class="stack" style="flex:1 1 240px;gap:6px">${f.uitkomst ? `<span><span class="pill ${/deal|akkoord|gekocht/i.test(f.uitkomst) && !/geen/i.test(f.uitkomst) ? 'good' : 'bad'}">${esc(f.uitkomst)}</span></span>` : ''}<p>${esc(f.samenvatting)}</p></div></div>
       <div class="grid2"><div class="stack" style="gap:6px"><span class="label">Wat ging goed</span><ul class="md">${(f.sterk || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div><div class="stack" style="gap:6px"><span class="label">Wat kan beter</span><ul class="md">${(f.beter || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>
       ${f.voorbeeld && f.voorbeeld.vraag ? `<div class="fb good"><span class="label">Voorbeeldantwoord</span><p><b>${esc(f.voorbeeld.vraag)}</b></p><p>${esc(f.voorbeeld.antwoord)}</p></div>` : ''}
       <div class="row"><button class="btn" data-act="chatagain">Zelfde gesprek opnieuw</button><button class="btn ghost" data-act="chatnew">Ander gesprek</button></div></section>`;
@@ -914,17 +938,20 @@ function vGesprek() {
     return h + `</div>`;
   }
   const s = c.scenario; let extra = '';
+  if (s === 'verkoop') extra = `<div class="fields"><label class="field"><span>Wat verkoop je?</span><input id="chProduct" placeholder="bijv. een nieuwe website voor een kapsalon"></label><label class="field"><span>Aan wie? (optioneel)</span><input id="chKlant" placeholder="bijv. eigenaar van een kapsalon met 3 vestigingen"></label><label class="field"><span>Prijs (optioneel)</span><input id="chPrijs" placeholder="bijv. € 2.500 + € 49 per maand"></label></div>${S.docs.length ? picker('chat', 'Productinformatie of verkoopstof (optioneel)') : ''}`;
   if (s === 'mondeling') extra = picker('chat', 'Over welke stof gaat het mondeling?');
   if (s === 'sollicitatie') extra = `<div class="fields"><label class="field"><span>Functie</span><input id="chFunctie" placeholder="bijv. Stagiair marketing"></label><label class="field"><span>Organisatie (optioneel)</span><input id="chOrg" placeholder="bijv. een webbureau in Leiden"></label></div>${S.docs.length ? picker('chat', 'Vacature of cv uit je stof (optioneel)') : ''}`;
   if (s === 'presentatie') extra = `<label class="field"><span>Onderwerp van je presentatie</span><input id="chOnderwerp" placeholder="bijv. Marketingplan voor een lokale bakkerij"></label>${S.docs.length ? picker('chat', 'Bijbehorende stof (optioneel)') : ''}`;
   if (s === 'stage') extra = `<label class="field"><span>Situatie</span><input id="chStage" placeholder="bijv. Tussentijdse evaluatie na 10 weken stage"></label>`;
   if (s === 'eigen') extra = `<label class="field"><span>Beschrijf het gesprek</span><textarea id="chEigen" placeholder="Wie is je gesprekspartner, waar gaat het over en wat wil je bereiken?"></textarea></label>`;
   const can = !S.busy && (s !== 'mondeling' || S.sel.chat.size);
+  if (!SCEN[s]) c.scenario = 'verkoop';
   return `<div class="stack"><div class="row between"><h2>Gesprek oefenen</h2>${aiMeter()}</div><section class="panel"><span class="label">Welk gesprek?</span>
   <div class="scen">${Object.entries(SCEN).map(([k, v]) => `<button data-act="seg" data-group="chat.scenario" data-val="${k}" aria-pressed="${s === k}"><b>${v.t}</b><span class="small muted">${v.d}</span></button>`).join('')}</div>
   ${extra}
-  <div class="fields"><div class="field"><span>Gesprekspartner</span>${seg('chat.toon', c.toon, [['vriendelijk', 'Vriendelijk'], ['neutraal', 'Neutraal'], ['streng', 'Kritisch']])}</div>
+  <div class="fields"><div class="field"><span>Gesprekspartner</span>${seg('chat.toon', c.toon, [['vriendelijk', 'Vriendelijk'], ['neutraal', 'Neutraal'], ['streng', 'Kritisch'], ['irritant', 'Irritant 🔥']])}</div>
   <div class="field"><span>Lengte</span>${seg('chat.lengte', c.lengte, [['kort', 'Kort'], ['normaal', 'Normaal'], ['lang', 'Lang']])}</div></div>
+  ${c.toon === 'irritant' ? `<div class="hint-irritant"><b>Moeilijkste niveau.</b> ${s === 'verkoop' ? 'De klant heeft eigenlijk geen zin, onderbreekt je, wil korting, noemt de concurrent goedkoper en gelooft je niet zomaar.' : 'Je gesprekspartner is ongeduldig, onderbreekt je, twijfelt aan alles en laat vage antwoorden niet liggen.'} Zijn geduld zakt bij vage, lange of zelfverzekerde-maar-lege antwoorden en stijgt alleen als je echt goed reageert. Op 0 loopt hij weg.</div>` : ''}
   <div><button class="btn" data-act="chatgo" ${can ? '' : 'disabled'}>Start gesprek</button></div></section>
   ${S.sessions.length ? `<section class="panel"><h3>Eerdere gesprekken</h3><div class="list">${S.sessions.slice(0, 10).map(x => `<div class="item"><div class="main"><span class="t">${esc(x.title)}</span><span class="small muted">${fmtDate(x.created_at)}${x.feedback && x.feedback.beter && x.feedback.beter[0] ? ' · ' + esc(x.feedback.beter[0]) : ''}</span></div>${x.cijfer != null ? `<span class="grade ${vClass(x.cijfer)}">${fmtCijfer(x.cijfer)}</span>` : ''}</div>`).join('')}</div></section>` : ''}</div>`;
 }
@@ -1015,7 +1042,7 @@ function bindDrop() {
   d.addEventListener('drop', ev => { if (ev.dataTransfer.files.length) handleFiles([...ev.dataTransfer.files], vakId, ($('#upTitle') || {}).value); });
 }
 function streamTo(obj) {
-  return text => { obj.streaming = text; const el = $('#streamOut'); if (el) { el.textContent = text; const b = $('#chatBox'); if (b) b.scrollTop = b.scrollHeight; } else render(); };
+  return text => { obj.streaming = text; const el = $('#streamOut'); if (el) { el.textContent = cleanTags(text); const b = $('#chatBox'); if (b) b.scrollTop = b.scrollHeight; } else render(); };
 }
 
 /* ================= oefentoets ================= */
@@ -1108,21 +1135,43 @@ function answerCard(known) {
 /* ================= gesprek ================= */
 function chatSetup() {
   const c = S.chat;
-  const toon = { vriendelijk: 'vriendelijk en geruststellend, maar wel inhoudelijk', neutraal: 'zakelijk en neutraal', streng: 'kritisch: vraag door op vage antwoorden en laat zwakke plekken niet liggen' }[c.toon];
+  const toon = { vriendelijk: 'vriendelijk en geruststellend, maar wel inhoudelijk', neutraal: 'zakelijk en neutraal', streng: 'kritisch: vraag door op vage antwoorden en laat zwakke plekken niet liggen', irritant: 'irritant en heel moeilijk (zie de regels voor het moeilijkste niveau hieronder)' }[c.toon];
   const aantal = { kort: 4, normaal: 7, lang: 11 }[c.lengte];
   const v = id => ($('#' + id) && $('#' + id).value.trim()) || '';
   const ids = [...S.sel.chat]; let rol = '', role = '', title = '', stofMax = 0;
+  if (c.scenario === 'verkoop') {
+    const prod = v('chProduct') || 'een product of dienst naar keuze van de student'; const klant = v('chKlant'); const prijs = v('chPrijs');
+    rol = 'Klant'; title = 'Verkoop: ' + (v('chProduct') || 'verkoopgesprek');
+    role = `Je bent een potentiële klant${klant ? ` (${klant})` : ''} in een verkoopgesprek. De student is de verkoper en probeert je ${prod} te verkopen${prijs ? `; de prijs is ${prijs}` : ''}. Jij bent de koper: je hebt een eigen situatie, budget en twijfels (bedenk die zelf, realistisch en concreet). Laat de verkoper het gesprek leiden: jij stelt vooral vragen, geeft bezwaren en reageert op wat hij zegt. Je stemt pas in als je echt overtuigd bent: als de verkoper je behoefte heeft onderzocht, je bezwaren serieus en concreet heeft beantwoord en om de koop of een vervolgafspraak vraagt.`;
+    stofMax = ids.length ? 20000 : 0;
+  }
   if (c.scenario === 'mondeling') { rol = 'Examinator'; title = 'Mondeling: ' + S.docs.filter(d => ids.includes(d.id)).map(d => d.title).slice(0, 2).join(', '); role = 'Je bent examinator bij een mondeling tentamen in het hbo. Je toetst of de student de studiestof begrijpt en kan toepassen. Stel open vragen over de stof, vraag naar voorbeelden en toepassingen, en vraag door als een antwoord oppervlakkig is.'; stofMax = 50000; }
   if (c.scenario === 'sollicitatie') { const f = v('chFunctie') || 'een functie'; const o = v('chOrg'); rol = 'Recruiter'; title = 'Sollicitatie: ' + f; role = `Je bent een recruiter/leidinggevende die een sollicitatiegesprek voert voor de functie "${f}"${o ? ' bij ' + o : ''}. Stel realistische vragen: motivatie, ervaring, sterke en zwakke punten, situatievragen (STAR) en vragen over de organisatie. Sluit af met de vraag of de kandidaat zelf nog vragen heeft.`; stofMax = ids.length ? 20000 : 0; }
   if (c.scenario === 'presentatie') { const o = v('chOnderwerp') || 'het onderwerp van de student'; rol = 'Jury'; title = 'Presentatie: ' + o; role = `De student heeft net een presentatie gegeven over "${o}". Jij bent docent/jurylid en stelt vragen na afloop: over keuzes, onderbouwing, bronnen, haalbaarheid en wat er beter kan.`; stofMax = ids.length ? 40000 : 0; }
   if (c.scenario === 'stage') { const o = v('chStage') || 'een stagegesprek'; rol = 'Stagebegeleider'; title = 'Stagegesprek'; role = `Je bent stagebegeleider. Situatie: ${o}. Je bespreekt hoe het gaat, vraagt naar concrete voorbeelden, leerdoelen, feedback van collega's en wat de student nog wil ontwikkelen.`; }
   if (c.scenario === 'eigen') { const o = v('chEigen') || 'een oefengesprek'; rol = 'Gesprekspartner'; title = 'Eigen gesprek'; role = `Speel de gesprekspartner in deze situatie die de student wil oefenen: ${o}`; }
-  return { role, rol, title: title.slice(0, 80), ids, stofMax, toon, aantal };
+  if (c.toon === 'irritant') title += ' 🔥';
+  return { role, rol, title: title.slice(0, 80), ids, stofMax, toon, aantal, irritant: c.toon === 'irritant', verkoop: c.scenario === 'verkoop' };
 }
 async function buildSystem(s) {
   const stof = s.stofMax ? await material(s.ids, s.stofMax) : '';
+  const irritant = s.irritant ? `
+
+REGELS VOOR HET MOEILIJKSTE NIVEAU (irritant):
+- Je bent ongeduldig, sceptisch en een beetje bot. Je hebt eigenlijk geen tijd en laat dat merken ("Ik heb tien minuten.", "Kom maar to the point.").
+- Je onderbreekt lange of vage verhalen ("Ja ja, maar wat kost het nou?"), zucht hoorbaar (*zucht*) en stelt soms een wedervraag in plaats van antwoord te geven.
+- Je gelooft beweringen niet zomaar: vraag om bewijs, cijfers of voorbeelden. Prik door marketingpraat en standaardzinnen heen.
+${s.verkoop ? `- Je hebt minstens vier bezwaren en brengt ze één voor één in: te duur, "de concurrent doet het goedkoper", "dat hebben we niet nodig", "ik moet het eerst met mijn partner/compagnon bespreken", "stuur maar een mailtje". Je vraagt nadrukkelijk om korting.
+- Een mooi kortingsaanbod zonder tegenprestatie maakt je juist wantrouwiger. Een verkoper die doorvraagt naar jouw situatie en het voordeel concreet maakt, maakt indruk.` : `- Je stelt lastige, onverwachte vervolgvragen en wijst tegenstrijdigheden in eerdere antwoorden aan.`}
+- Blijf realistisch en zakelijk: geen scheldwoorden, geen discriminatie, geen persoonlijke beledigingen. Irritant, niet grof.
+- Je bent wel overtuigbaar: reageert de student rustig, luistert hij, vat hij samen en geeft hij concrete antwoorden, dan word je langzaam milder.
+- GEDULDMETER: je geduld begint op 5 (schaal 0-10). Na elke beurt pas je het aan: vaag, te lang, opdringerig, onzeker of je negeren = -1 tot -3; goed doorvragen, rustig blijven, concreet bewijs of een sterke oplossing = +1 tot +2. Zet aan het EINDE van ELK bericht precies één regel: [GEDULD: N] (alleen het getal N).
+- Valt je geduld naar 0, sluit dan kort en kortaf af ("Weet je wat, laat maar.") en zet [WEG] aan het einde.${s.verkoop ? `
+- Ga je akkoord met de koop of een concrete vervolgafspraak, zeg dat dan duidelijk en zet [DEAL] aan het einde.` : ''}` : (s.verkoop ? `
+
+Ga je akkoord met de koop of een concrete vervolgafspraak, zeg dat dan duidelijk en zet [DEAL] aan het einde van dat bericht.` : '');
   return `${s.role}
-Dit is een oefenrollenspel om een student voor te bereiden. Blijf steeds in je rol. Stel één vraag tegelijk en wacht op het antwoord. Reageer kort op elk antwoord (doorvragen mag) en ga dan verder. Schrijf in natuurlijk gesproken Nederlands, zonder opsommingen of kopjes, maximaal 4 zinnen per beurt. Toon: ${s.toon}. Het gesprek duurt ongeveer ${s.aantal} vragen; rond daarna netjes af en zeg dat het gesprek klaar is. Geef tijdens het gesprek geen cijfer of beoordeling.${stof ? '\n\nSTOF WAAR HET GESPREK OVER GAAT:\n' + stof : ''}`;
+Dit is een oefenrollenspel om een student voor te bereiden. Blijf steeds in je rol. ${s.verkoop ? 'Reageer als klant op wat de verkoper zegt, één punt tegelijk.' : 'Stel één vraag tegelijk en wacht op het antwoord. Reageer kort op elk antwoord (doorvragen mag) en ga dan verder.'} Schrijf in natuurlijk gesproken Nederlands, zonder opsommingen of kopjes, maximaal 4 zinnen per beurt. Toon: ${s.toon}. Het gesprek duurt ongeveer ${s.aantal} ${s.verkoop ? 'beurten' : 'vragen'}; rond daarna af${s.irritant ? '' : ' en zeg dat het gesprek klaar is'}. Geef tijdens het gesprek geen cijfer of beoordeling.${irritant}${stof ? '\n\nSTOF WAAR HET GESPREK OVER GAAT:\n' + stof : ''}`;
 }
 function chatMsgs() {
   let msgs = S.chat.msgs.slice(-40); let total = msgs.reduce((s, m) => s + m.content.length, 0);
@@ -1132,7 +1181,14 @@ function chatMsgs() {
 }
 async function chatTurn() {
   const c = S.chat; c.streaming = ''; scrollChat = true; render();
-  try { const text = await callAI({ kind: 'gesprek', system: c.system, messages: chatMsgs(), max_tokens: 800, onText: streamTo(c) }); c.msgs.push({ role: 'assistant', content: text }); }
+  try {
+    const text = await callAI({ kind: 'gesprek', system: c.system, messages: chatMsgs(), max_tokens: 800, onText: streamTo(c) });
+    c.msgs.push({ role: 'assistant', content: text });
+    const t = readTags(text);
+    if (t.geduld != null) c.geduld = t.geduld;
+    if (t.weg || (c.setupInfo && c.setupInfo.irritant && c.geduld === 0)) c.over = 'weg';
+    else if (t.deal) c.over = 'deal';
+  }
   catch (e) { aiErr(e); }
   finally { c.streaming = null; render(); const i = $('#chatIn'); if (i) i.focus(); }
 }
@@ -1140,7 +1196,8 @@ async function startChat() {
   const c = S.chat; const s = chatSetup();
   setBusy('Gesprek voorbereiden…');
   try { c.system = await buildSystem(s); } finally { setBusy(null); }
-  Object.assign(c, { phase: 'run', msgs: [{ role: 'user', content: 'Begin het gesprek: stel jezelf kort voor in je rol en stel je eerste vraag.' }], tips: {}, feedback: null, rol: s.rol, title: s.title, setupInfo: s });
+  const opener = s.verkoop ? 'Begin het gesprek: de verkoper komt net binnen of belt je. Reageer zoals deze klant zou doen (kort, in je rol) en laat de verkoper beginnen.' : 'Begin het gesprek: stel jezelf kort voor in je rol en stel je eerste vraag.';
+  Object.assign(c, { phase: 'run', msgs: [{ role: 'user', content: opener }], tips: {}, feedback: null, rol: s.rol, title: s.title, setupInfo: s, geduld: s.irritant ? 5 : null, over: null });
   await chatTurn();
 }
 async function sendChat() {
@@ -1152,7 +1209,9 @@ async function chatTip() {
   setBusy('Tip ophalen…');
   try {
     const stof = c.scenario === 'mondeling' ? '\n\nStof:\n' + await material([...S.sel.chat], 20000) : '';
-    c.tips[c.msgs.lastIndexOf(lastAi)] = await callAI({ kind: 'tip', tier: 'quick', max_tokens: 400, prompt: `Een student oefent dit gesprek: ${c.title}. De gesprekspartner (${c.rol}) zei net:\n"${lastAi.content}"\n\nGeef de student een korte, concrete tip (maximaal 3 zinnen) hoe die hier sterk op kan antwoorden, bijvoorbeeld welke structuur of welk voorbeeld. Zeg het antwoord niet volledig voor. Schrijf in het Nederlands en spreek de student aan met "je".${stof}` });
+    const extraTip = c.scenario === 'verkoop' ? ' Denk aan verkooptechniek: LSD (luisteren, samenvatten, doorvragen), bezwaarbehandeling (erkennen, uitvragen, beantwoorden, checken), voordelen in plaats van kenmerken, en op tijd afsluiten.' : '';
+    const irr = c.setupInfo && c.setupInfo.irritant ? ' De gesprekspartner is bewust irritant en ongeduldig; help de student rustig en kort te blijven.' : '';
+    c.tips[c.msgs.lastIndexOf(lastAi)] = await callAI({ kind: 'tip', tier: 'quick', max_tokens: 400, prompt: `Een student oefent dit gesprek: ${c.title}. De gesprekspartner (${c.rol}) zei net:\n"${cleanTags(lastAi.content)}"\n\nGeef de student een korte, concrete tip (maximaal 3 zinnen) hoe die hier sterk op kan antwoorden, bijvoorbeeld welke structuur of welk voorbeeld.${extraTip}${irr} Zeg het antwoord niet volledig voor. Schrijf in het Nederlands en spreek de student aan met "je".${stof}` });
   } catch (e) { aiErr(e); }
   finally { scrollChat = true; setBusy(null); }
 }
@@ -1160,18 +1219,21 @@ async function endChat() {
   const c = S.chat;
   setBusy('Je gesprek wordt beoordeeld…');
   try {
-    const transcript = c.msgs.slice(1).map(m => `${m.role === 'assistant' ? c.rol : 'Student'}: ${m.content}`).join('\n\n');
+    const transcript = c.msgs.slice(1).map(m => `${m.role === 'assistant' ? c.rol : 'Student'}: ${m.role === 'assistant' ? cleanTags(m.content) : m.content}`).join('\n\n');
+    const sv = c.setupInfo || {};
+    const focus = sv.verkoop ? ' Let bij dit verkoopgesprek vooral op: behoefteonderzoek (open vragen, LSD), bezwaarbehandeling, voordelen in plaats van kenmerken, omgaan met kortingsverzoeken en of de student om de deal of een vervolgafspraak vroeg.' : '';
+    const hard = sv.irritant ? ` De gesprekspartner was bewust irritant en heel moeilijk; beoordeel ook of de student rustig en professioneel bleef. Uitkomst: ${c.over === 'deal' ? 'de klant ging akkoord' : c.over === 'weg' ? 'de gesprekspartner liep weg' : 'geen duidelijke uitkomst'}${c.geduld != null ? `, eindgeduld ${c.geduld}/10` : ''}.` : (c.over === 'deal' ? ' Uitkomst: de klant ging akkoord.' : '');
     const stof = c.scenario === 'mondeling' ? '\n\nSTOF:\n' + await material([...S.sel.chat], 50000) : '';
-    const r = await aiJson({ kind: 'feedback', prompt: `Hieronder staat een oefengesprek (${c.title}) tussen een student en een AI die de rol van ${c.rol} speelde. Geef de student feedback als ervaren coach. Beoordeel inhoud, structuur, overtuigingskracht en hoe concreet de antwoorden waren${c.scenario === 'mondeling' ? ', en vooral of de inhoud klopt met de stof' : ''}. Spreek de student aan met "je".
-Antwoord met alleen JSON: {"cijfer":7.5,"samenvatting":"2-3 zinnen","sterk":["...","..."],"beter":["...","..."],"voorbeeld":{"vraag":"de vraag uit het gesprek waar de student het meest van kan leren","antwoord":"een sterk voorbeeldantwoord, in de ik-vorm"}}
+    const r = await aiJson({ kind: 'feedback', prompt: `Hieronder staat een oefengesprek (${c.title}) tussen een student en een AI die de rol van ${c.rol} speelde. Geef de student feedback als ervaren coach. Beoordeel inhoud, structuur, overtuigingskracht en hoe concreet de antwoorden waren${c.scenario === 'mondeling' ? ', en vooral of de inhoud klopt met de stof' : ''}.${focus}${hard} Spreek de student aan met "je".
+Antwoord met alleen JSON: {"cijfer":7.5,${sv.verkoop ? '"uitkomst":"Deal gesloten" of "Geen deal" of "Vervolgafspraak",' : ''}"samenvatting":"2-3 zinnen","sterk":["...","..."],"beter":["...","..."],"voorbeeld":{"vraag":"het moment of de vraag uit het gesprek waar de student het meest van kan leren","antwoord":"een sterk voorbeeldantwoord, in de ik-vorm"}}
 "cijfer" is op de Nederlandse schaal van 1 tot 10.
 
 GESPREK:
 ${transcript}${stof}` });
     const cijfer = Math.max(1, Math.min(10, +r.cijfer || 5.5));
-    c.feedback = { cijfer, samenvatting: String(r.samenvatting || ''), sterk: (r.sterk || []).map(String), beter: (r.beter || []).map(String), voorbeeld: r.voorbeeld || null };
+    c.feedback = { cijfer, uitkomst: sv.verkoop ? String(r.uitkomst || (c.over === 'deal' ? 'Deal gesloten' : 'Geen deal')) : (c.over === 'weg' ? 'Weggelopen' : ''), samenvatting: String(r.samenvatting || ''), sterk: (r.sterk || []).map(String), beter: (r.beter || []).map(String), voorbeeld: r.voorbeeld || null };
     c.phase = 'feedback'; markStudy();
-    try { const row = await q(sb.from('sessions').insert({ title: c.title, scenario: c.scenario, cijfer, feedback: c.feedback, msgs: c.msgs.slice(1, 41) }).select('id,title,scenario,cijfer,feedback,created_at').single()); S.sessions.unshift(row); } catch (e) { dbErr(e); }
+    try { const row = await q(sb.from('sessions').insert({ title: c.title, scenario: c.scenario, cijfer, feedback: c.feedback, msgs: c.msgs.slice(1, 41).map(m => ({ role: m.role, content: m.role === 'assistant' ? cleanTags(m.content) : m.content })) }).select('id,title,scenario,cijfer,feedback,created_at').single()); S.sessions.unshift(row); } catch (e) { dbErr(e); }
   } catch (e) { aiErr(e); }
   finally { setBusy(null); }
 }
@@ -1380,8 +1442,8 @@ document.addEventListener('click', async e => {
   if (a === 'chatsend') { await sendChat(); return; }
   if (a === 'chattip') { await chatTip(); return; }
   if (a === 'chatend') { await endChat(); return; }
-  if (a === 'chatnew') { S.chat.phase = 'setup'; S.chat.msgs = []; render(); return; }
-  if (a === 'chatagain') { const c = S.chat; Object.assign(c, { phase: 'run', msgs: [c.msgs[0]], tips: {}, feedback: null }); await chatTurn(); return; }
+  if (a === 'chatnew') { Object.assign(S.chat, { phase: 'setup', msgs: [], over: null, geduld: null }); render(); return; }
+  if (a === 'chatagain') { const c = S.chat; Object.assign(c, { phase: 'run', msgs: [c.msgs[0]], tips: {}, feedback: null, over: null, geduld: c.setupInfo && c.setupInfo.irritant ? 5 : null }); await chatTurn(); return; }
   // uitleg
   if (a === 'sum') { await summarize(d.kind); return; }
   if (a === 'sumdl') { download(`leerpuls-${S.qa.kind || 'uitleg'}.md`, S.qa.out, 'text/markdown'); return; }
