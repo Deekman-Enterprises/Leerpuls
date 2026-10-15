@@ -202,6 +202,26 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 @keyframes p{to{opacity:.25}}
 .toasts{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:grid;justify-items:center;gap:8px;z-index:9;pointer-events:none}
 .toast{background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;max-width:520px;font-size:.92rem;pointer-events:auto}
+.photos{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}
+.ph{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:3/4}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .nr{position:absolute;top:6px;left:6px;background:var(--ink);color:var(--paper);font-family:var(--f-mono);font-size:.75rem;border-radius:6px;padding:1px 7px}
+.ph .tools{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;gap:2px;padding:4px;background:linear-gradient(transparent,rgba(0,0,0,.6))}
+.ph .tools button{border:0;background:rgba(255,255,255,.92);color:#161D36;border-radius:6px;min-width:30px;height:30px;font-size:.9rem;cursor:pointer;padding:0 6px}
+.camrow{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+.cambtn{display:grid;justify-items:center;gap:4px;text-align:center;padding:16px 10px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer;font-weight:700}
+.cambtn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.cambtn svg{width:28px;height:28px}
+.cambtn{position:relative}
+.cambtn input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.gallery{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));margin-bottom:12px}
+.gallery a{display:block;border:1px solid var(--line);border-radius:6px;overflow:hidden;aspect-ratio:3/4;background:var(--card)}
+.gallery img{width:100%;height:100%;object-fit:cover;display:block}
+.touch-only{display:none}
+@media (hover:none),(pointer:coarse){.touch-only{display:initial}.desk-only{display:none}}
+.mobile-panel{display:none}
+@media (max-width:760px),(pointer:coarse){.mobile-panel{display:grid}}
+.mobile-panel.force{display:grid}
 .steps{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
 .steps div{display:grid;gap:4px;border-top:3px solid var(--hl-solid);padding-top:10px}
 .meter{display:flex;align-items:center;gap:8px}
@@ -293,6 +313,7 @@ const S = {
   ai: { used: 0, limit: 0, unlimited: false },
   sel: { quiz: new Set(), cards: new Set(), chat: new Set(), qa: new Set() },
   busy: null, openDoc: null, confirm: null, openVak: null, openPlan: null, newVakKleur: '1',
+  photos: [], photoUrls: {}, phVak: '', phTitle: '',
   quiz: { phase: 'setup', n: 10, soort: 'mix', niveau: 'toets' },
   cardsSet: { n: 15 }, study: null,
   chat: { phase: 'setup', scenario: 'mondeling', toon: 'neutraal', lengte: 'normaal', msgs: [], tips: {} },
@@ -513,9 +534,9 @@ function setBusy(msg) { S.busy = msg; render(); }
 
 /* ================= documenten ================= */
 const MAXCH = 100000;
-async function addDocument({ title, vakId, text, source, file }) {
+async function addDocument({ title, vakId, text, source, file, photos }) {
   text = (text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-  if (text.length < 40) { toast(`“${title}” bevat (bijna) geen tekst. Is het een scan? Voeg dan foto's van de pagina's toe.`, 7000); return; }
+  if (text.length < 40) { toast(source === 'foto' ? 'Op de foto\'s is (bijna) geen tekst te lezen. Probeer het opnieuw met scherpere foto\'s en meer licht.' : `“${title}” bevat (bijna) geen tekst. Is het een scan? Voeg dan foto's van de pagina's toe.`, 7000); return false; }
   const parts = [];
   for (let i = 0; i < text.length && parts.length < 8; i += MAXCH) parts.push(text.slice(i, i + MAXCH));
   for (let i = 0; i < parts.length; i++) {
@@ -530,9 +551,19 @@ async function addDocument({ title, vakId, text, source, file }) {
       const { error } = await sb.storage.from('documenten').upload(path, file, { upsert: true, contentType: file.type || undefined });
       if (!error) { await sb.from('documents').update({ file_path: path, file_name: file.name }).eq('id', row.id); row.file_path = path; row.file_name = file.name; }
     }
+    if (photos && photos.length && i === 0) {
+      let first = null, saved = 0;
+      for (let k = 0; k < photos.length; k++) {
+        const path = `${S.user.id}/${row.id}/foto-${String(k + 1).padStart(2, '0')}.jpg`;
+        const { error } = await sb.storage.from('documenten').upload(path, photos[k], { upsert: true, contentType: 'image/jpeg' });
+        if (!error) { saved++; if (!first) first = path; }
+      }
+      if (first) { const name = `${saved} foto${saved === 1 ? '' : "'s"}`; await sb.from('documents').update({ file_path: first, file_name: name }).eq('id', row.id); row.file_path = first; row.file_name = name; }
+    }
     S.docs.unshift(row);
   }
   toast(`“${title}” is toegevoegd${parts.length > 1 ? ` in ${parts.length} delen` : ''}.`);
+  return true;
 }
 async function readPdf(file) {
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');
@@ -552,33 +583,108 @@ async function readDocx(file) {
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
   return (await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
 }
-async function toBase64Image(file) {
-  let blob = file;
-  if (file.size > 1.2e6 || !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
-    const bmp = await createImageBitmap(file);
-    const k = Math.min(1, 1800 / Math.max(bmp.width, bmp.height));
-    const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
-    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
-    blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.85));
-  }
-  const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
-  return { media_type: blob.type || 'image/jpeg', data };
+async function decodeImage(file) {
+  try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch {}
+  try { return await createImageBitmap(file); } catch {}
+  return await new Promise((res, rej) => {
+    const url = URL.createObjectURL(file); const im = new Image();
+    im.onload = () => { res(im); setTimeout(() => URL.revokeObjectURL(url), 2000); };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('decode')); };
+    im.src = url;
+  });
 }
-async function readImages(files) {
+async function drawToJpeg(img, rotate = 0, max = 2000) {
+  const w = img.width || img.naturalWidth, h = img.height || img.naturalHeight;
+  const k = Math.min(1, max / Math.max(w, h)); const dw = Math.round(w * k), dh = Math.round(h * k);
+  const turn = rotate % 180 !== 0; const cv = document.createElement('canvas');
+  cv.width = turn ? dh : dw; cv.height = turn ? dw : dh;
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.translate(cv.width / 2, cv.height / 2); ctx.rotate(rotate * Math.PI / 180); ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.82));
+  if (!blob) throw new Error('canvas');
+  return blob;
+}
+async function toJpeg(file, rotate = 0) { const img = await decodeImage(file); try { return await drawToJpeg(img, rotate); } finally { if (img.close) img.close(); } }
+async function blobToB64(blob) {
+  const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+  return { media_type: 'image/jpeg', data };
+}
+async function readImages(blobs) {
   let text = '';
-  for (let i = 0; i < files.length; i += 5) {
-    const batch = await Promise.all(files.slice(i, i + 5).map(toBase64Image));
-    setBusy(`Foto's lezen met AI… (${Math.min(i + 5, files.length)} van ${files.length})`);
-    text += await callAI({ kind: 'foto', images: batch, max_tokens: 8000, prompt: "Schrijf alle leesbare tekst uit deze foto('s) van studiemateriaal of aantekeningen letterlijk over, in de volgorde van de pagina's. Behoud kopjes en opsommingen. Is iets handgeschreven, doe dan je best en zet onleesbare woorden tussen [ ]. Geef alleen de tekst, zonder inleiding." }) + '\n\n';
+  for (let i = 0; i < blobs.length; i += 4) {
+    const batch = await Promise.all(blobs.slice(i, i + 4).map(blobToB64));
+    setBusy(`Foto's lezen met AI… (${Math.min(i + 4, blobs.length)} van ${blobs.length})`);
+    text += await callAI({ kind: 'foto', images: batch, max_tokens: 8000, prompt: `Schrijf alle leesbare tekst uit deze foto('s) van studiemateriaal of aantekeningen letterlijk over, in de volgorde van de foto's (dit zijn pagina ${i + 1} t/m ${Math.min(i + 4, blobs.length)}). Behoud kopjes en opsommingen. Beschrijf schema's, tabellen of tekeningen kort tussen [ ]. Is iets handgeschreven, doe dan je best en zet onleesbare woorden tussen [?]. Geef alleen de tekst, zonder inleiding.` }) + '\n\n';
   }
   return text;
 }
+/* ---- foto's klaarzetten (telefoon) ---- */
+const MAXPHOTOS = 20;
+async function addPhotos(files) {
+  files = Array.from(files).filter(f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+  if (!files.length) return;
+  const room = MAXPHOTOS - S.photos.length;
+  if (room <= 0) { toast(`Maximaal ${MAXPHOTOS} foto's per keer. Lees deze eerst uit.`); return; }
+  if (files.length > room) toast(`Alleen de eerste ${room} foto's zijn toegevoegd (maximaal ${MAXPHOTOS} per keer).`);
+  setBusy(files.length > 1 ? `${files.length} foto's voorbereiden…` : 'Foto voorbereiden…');
+  let failed = 0;
+  try {
+    for (const f of files.slice(0, room)) {
+      try { const blob = await toJpeg(f); S.photos.push({ blob, url: URL.createObjectURL(blob) }); }
+      catch (e) { console.error(e); failed++; }
+    }
+  } finally { setBusy(null); }
+  if (failed) toast(`${plural(failed, 'foto kon', "foto's konden")} niet geopend worden. Is het een HEIC-foto? Maak de foto dan met de knop "Maak foto", of zet op je iPhone Instellingen → Camera → Formaten op "Meest compatibel".`, 9000);
+}
+function dropPhoto(i) { const [p] = S.photos.splice(i, 1); if (p) URL.revokeObjectURL(p.url); }
+async function rotatePhoto(i) {
+  const p = S.photos[i]; if (!p) return;
+  const blob = await toJpeg(p.blob, 90);
+  URL.revokeObjectURL(p.url); p.blob = blob; p.url = URL.createObjectURL(blob); render();
+}
+async function processPhotos(vakId, title) {
+  if (!S.photos.length) return;
+  const blobs = S.photos.map(p => p.blob); const n = blobs.length;
+  title = title || `Aantekeningen ${new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}`;
+  try {
+    const text = await readImages(blobs);
+    setBusy("Foto's opslaan…");
+    const ok = await addDocument({ title, vakId, text, source: 'foto', photos: blobs });
+    if (ok) { S.photos.forEach(p => URL.revokeObjectURL(p.url)); S.photos = []; S.phTitle = ''; markStudy(); }
+  } catch (e) { aiErr(e); toast(`Je ${n === 1 ? 'foto staat' : n + " foto's staan"} nog klaar; probeer het zo opnieuw.`, 6000); }
+  finally { setBusy(null); }
+}
+const ICON_CAM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
+const ICON_PICS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>';
+function photoPanel(vakId, opts = {}) {
+  const n = S.photos.length;
+  const cls = opts.mobileOnly && !n ? 'panel mobile-panel' : 'panel';
+  let h = `<section class="${cls}"><div class="row between"><h3>${opts.heading || "Foto's van je aantekeningen"}</h3>${n ? `<span class="label">${plural(n, 'foto', "foto's")} klaar</span>` : ''}</div>`;
+  if (!n) h += `<p class="small muted">Maak foto's van je aantekeningen, dictaat of boek. Je kunt meerdere pagina's achter elkaar fotograferen; de AI zet alles om in tekst waarmee je kunt oefenen.</p>`;
+  h += `<div class="camrow">
+    <label class="cambtn primary">${ICON_CAM}<span>${n ? 'Nog een foto' : 'Maak foto'}</span><input type="file" accept="image/*" capture="environment" data-photo="cam"></label>
+    <label class="cambtn">${ICON_PICS}<span>Kies uit foto's</span><input type="file" accept="image/*" multiple data-photo="pick"></label></div>`;
+  if (n) {
+    h += `<div class="photos">${S.photos.map((p, i) => `<div class="ph"><img src="${p.url}" alt="Pagina ${i + 1}"><span class="nr">${i + 1}</span><div class="tools">
+      <button data-act="phmove" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Pagina ${i + 1} naar voren">‹</button>
+      <button data-act="phrot" data-i="${i}" aria-label="Pagina ${i + 1} draaien">↻</button>
+      <button data-act="phdel" data-i="${i}" aria-label="Pagina ${i + 1} verwijderen">✕</button>
+      <button data-act="phmove" data-i="${i}" data-d="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Pagina ${i + 1} naar achteren">›</button></div></div>`).join('')}</div>`;
+    if (opts.withVak) h += `<label class="field"><span>Vak</span><select id="phVak">${vakOptions(S.phVak || null)}</select></label>`;
+    h += `<label class="field"><span>Titel</span><input id="phTitle" placeholder="bijv. College 5 aantekeningen" value="${esc(S.phTitle)}" maxlength="120"></label>
+    <div class="row"><button class="btn hl" data-act="phgo" data-vak="${vakId == null ? '' : vakId}" ${S.busy ? 'disabled' : ''}>Lees ${n === 1 ? 'foto' : n + " foto's"} uit</button><button class="btn ghost" data-act="phclear">Alles weghalen</button></div>
+    <p class="small muted">Tip: fotografeer recht boven de pagina, met goed licht. Draai een foto met ↻ als hij scheef staat.</p>`;
+  }
+  return h + `</section>`;
+}
 async function handleFiles(files, vakId, title) {
   files = Array.from(files);
-  const imgs = files.filter(f => f.type.startsWith('image/'));
+  const isImg = f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name);
+  const imgs = files.filter(isImg);
+  if (imgs.length) { await addPhotos(imgs); toast(`${plural(imgs.length, 'foto staat', "foto's staan")} klaar. Tik op "Lees foto's uit" als je alle pagina's hebt.`, 6000); }
   try {
     for (const f of files) {
-      if (f.type.startsWith('image/')) continue;
+      if (isImg(f)) continue;
       const ext = f.name.split('.').pop().toLowerCase();
       if (f.size > 40e6) { toast(`${f.name} is groter dan 40 MB.`); continue; }
       try {
@@ -590,10 +696,6 @@ async function handleFiles(files, vakId, title) {
         else { toast(`${f.name}: dit type wordt niet ondersteund. Gebruik PDF, Word (.docx), tekst of foto's.`, 6000); continue; }
         await addDocument({ title: f.name.replace(/\.[^.]+$/, ''), vakId, text, source: ext, file: f });
       } catch (e) { console.error(e); toast(`${f.name} kon niet gelezen worden.`, 6000); }
-    }
-    if (imgs.length) {
-      try { const text = await readImages(imgs); await addDocument({ title: title || `Aantekeningen ${fmtDate(Date.now())}`, vakId, text, source: 'foto' }); }
-      catch (e) { aiErr(e); }
     }
   } finally { setBusy(null); }
 }
@@ -653,6 +755,7 @@ function vVandaag() {
       <div><b>Oefen ermee</b><span class="muted small">Oefentoetsen met cijfer, flashcards, gesprekken en een leerplan tot je toets.</span></div></div>
       <div><button class="btn" data-act="tab" data-tab="vakken">Eerste vak aanmaken</button></div></section>`;
   }
+  if (S.vakken.length || S.photos.length) h += photoPanel(null, { withVak: true, mobileOnly: true, heading: "Snel foto's toevoegen" });
   h += `<div class="grid2">`;
   if (tasks.length) h += `<section class="panel"><h3>Vandaag op je leerplan</h3><div class="plan">${tasks.map(({ e, t, i }) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span style="flex:1;display:grid;gap:2px"><span class="tt">${esc(t.taak)}</span><span class="small muted">${esc(e.naam)} · ${esc(vakNaam(e.vak_id))}${t.datum < today ? ' · ingehaald van ' + fmtDay(t.datum) : ''}</span></span></button>`).join('')}</div></section>`;
   h += `<section class="panel"><div class="row between"><h3>Toetsplanner</h3><span class="label">${plural(exams.length, 'toets', 'toetsen')}</span></div>
@@ -704,8 +807,9 @@ function vVak(id) {
   if (docs.length) h += `<section class="panel"><span class="label">Oefenen met dit vak</span><div class="row">
     <button class="btn" data-act="vakgo" data-to="toets" data-id="${id}">Oefentoets</button><button class="btn ghost" data-act="vakgo" data-to="kaarten" data-id="${id}">Flashcards maken</button>
     <button class="btn ghost" data-act="vakgo" data-to="uitleg" data-id="${id}">Samenvatting &amp; vragen</button><button class="btn ghost" data-act="vakgo" data-to="gesprek" data-id="${id}">Mondeling oefenen</button></div></section>`;
+  h += photoPanel(id || null);
   h += `<section class="panel"><h3>Document toevoegen${v ? ' aan ' + esc(v.naam) : ''}</h3>
-  <label class="drop" id="drop"><input type="file" id="upFile" multiple accept=".pdf,.docx,.txt,.md,.csv,image/*"><b>Sleep bestanden hierheen of klik om te kiezen</b><span class="small muted">PDF, Word (.docx), tekst, of foto's van je aantekeningen (de AI leest ze voor je uit)</span></label>
+  <label class="drop" id="drop"><input type="file" id="upFile" multiple accept=".pdf,.docx,.txt,.md,.csv,image/*"><b><span class="desk-only">Sleep bestanden hierheen of klik om te kiezen</span><span class="touch-only">Tik om een bestand te kiezen</span></b><span class="small muted">PDF, Word (.docx) of tekst. Foto's mogen ook.</span></label>
   <details><summary class="link" style="cursor:pointer">Of plak tekst</summary><div class="stack" style="margin-top:10px"><label class="field"><span>Titel</span><input id="upTitle" placeholder="bijv. College 4 aantekeningen"></label><textarea id="upText" placeholder="Plak hier je samenvatting, collegeaantekeningen of een hoofdstuk"></textarea><div><button class="btn" data-act="paste" data-vak="${id}">Tekst toevoegen</button></div></div></details></section>`;
   h += `<section class="panel"><div class="row between"><h3>Documenten</h3><span class="label">${docs.length}</span></div>${docs.length ? `<div class="list">${docs.map(d => docItem(d)).join('')}</div>` : `<p class="muted small">Nog geen documenten in dit vak.</p>`}</section>`;
   return h + `</div>`;
@@ -714,9 +818,9 @@ function docItem(d) {
   const conf = S.confirm === 'doc:' + d.id; const open = S.openDoc === d.id;
   return `<div class="item"><div class="main"><span class="t">${esc(d.title)}</span><span class="small muted mono">${(d.chars || 0).toLocaleString('nl-NL')} tekens · ${esc(d.source || '')} · ${fmtDate(d.created_at)}</span></div>
   ${conf ? `<span class="small">Verwijderen?</span><button class="btn sm danger" data-act="docdel" data-id="${d.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
-  `<button class="btn sm ghost" data-act="docview" data-id="${d.id}">${open ? 'Sluit' : 'Bekijk'}</button>${d.file_path ? `<button class="btn sm ghost" data-act="docfile" data-id="${d.id}">Origineel</button>` : ''}<button class="btn sm ghost" data-act="ask" data-id="${d.id}">Vraag erover</button>
+  `<button class="btn sm ghost" data-act="docview" data-id="${d.id}">${open ? 'Sluit' : 'Bekijk'}</button>${d.file_path ? (d.source === 'foto' ? `<button class="btn sm ghost" data-act="docview" data-id="${d.id}">Foto's</button>` : `<button class="btn sm ghost" data-act="docfile" data-id="${d.id}">Origineel</button>`) : ''}<button class="btn sm ghost" data-act="ask" data-id="${d.id}">Vraag erover</button>
   <select class="small" style="width:auto" data-move="${d.id}" aria-label="Verplaats naar vak">${vakOptions(d.vak_id)}</select><button class="link small" data-act="confirm" data-key="doc:${d.id}">Verwijder</button>`}
-  ${open ? `<div class="preview">${d.summary ? `<div class="md" style="white-space:normal;margin-bottom:12px"><span class="label">Samenvatting</span>${md(d.summary)}</div>` : ''}${S.texts[d.id] == null ? 'Laden…' : esc(S.texts[d.id].slice(0, 6000)) + (S.texts[d.id].length > 6000 ? '\n…' : '')}</div>` : ''}</div>`;
+  ${open ? `<div class="preview">${d.source === 'foto' && d.file_path ? (S.photoUrls[d.id] ? `<div class="gallery">${S.photoUrls[d.id].map((u, i) => `<a href="${u}" target="_blank" rel="noopener" aria-label="Foto ${i + 1} groot openen"><img src="${u}" alt="Foto ${i + 1}" loading="lazy"></a>`).join('')}</div>` : `<p class="small muted" style="margin-bottom:12px">Foto's laden…</p>`) : ''}${d.summary ? `<div class="md" style="white-space:normal;margin-bottom:12px"><span class="label">Samenvatting</span>${md(d.summary)}</div>` : ''}${S.texts[d.id] == null ? 'Laden…' : esc(S.texts[d.id].slice(0, 6000)) + (S.texts[d.id].length > 6000 ? '\n…' : '')}</div>` : ''}</div>`;
 }
 
 /* ---- Oefentoets ---- */
@@ -1197,14 +1301,37 @@ document.addEventListener('click', async e => {
   }
   // documenten
   if (a === 'paste') { const t = $('#upText'); if (!t.value.trim()) { toast('Plak eerst tekst in het vak.'); return; } setBusy('Tekst opslaan…'); try { await addDocument({ title: $('#upTitle').value.trim() || `Notities ${fmtDate(Date.now())}`, vakId: d.vak || null, text: t.value, source: 'geplakt' }); t.value = ''; $('#upTitle').value = ''; } finally { setBusy(null); } return; }
-  if (a === 'docview') { if (S.openDoc === d.id) { S.openDoc = null; render(); return; } S.openDoc = d.id; render(); await ensureTexts([d.id]); render(); return; }
+  if (a === 'docview') {
+    if (S.openDoc === d.id) { S.openDoc = null; render(); return; }
+    S.openDoc = d.id; render();
+    const doc = S.docs.find(x => x.id === d.id);
+    await ensureTexts([d.id]);
+    if (doc && doc.source === 'foto' && doc.file_path && !S.photoUrls[d.id]) {
+      const dir = doc.file_path.split('/').slice(0, -1).join('/');
+      const { data: files } = await sb.storage.from('documenten').list(dir, { limit: 100, sortBy: { column: 'name', order: 'asc' } });
+      const paths = (files || []).filter(f => /\.jpe?g$/i.test(f.name)).map(f => `${dir}/${f.name}`);
+      if (paths.length) { const { data: urls } = await sb.storage.from('documenten').createSignedUrls(paths, 3600); S.photoUrls[d.id] = (urls || []).map(u => u.signedUrl).filter(Boolean); }
+      else S.photoUrls[d.id] = [];
+    }
+    render(); return;
+  }
+  // foto's klaarzetten
+  if (a === 'phdel') { dropPhoto(+d.i); render(); return; }
+  if (a === 'phrot') { await rotatePhoto(+d.i); return; }
+  if (a === 'phmove') { const i = +d.i, j = i + (+d.d); if (j >= 0 && j < S.photos.length) { [S.photos[i], S.photos[j]] = [S.photos[j], S.photos[i]]; render(); } return; }
+  if (a === 'phclear') { S.photos.forEach(p => URL.revokeObjectURL(p.url)); S.photos = []; render(); return; }
+  if (a === 'phgo') {
+    const sel = $('#phVak'); const vakId = sel ? (sel.value || null) : (d.vak || null);
+    S.phTitle = ($('#phTitle') && $('#phTitle').value.trim()) || '';
+    await processPhotos(vakId, S.phTitle); return;
+  }
   if (a === 'docfile') {
     const w = window.open('', '_blank'); const doc = S.docs.find(x => x.id === d.id);
     const { data, error } = await sb.storage.from('documenten').createSignedUrl(doc.file_path, 120);
     if (error) { if (w) w.close(); toast('Het originele bestand kon niet geopend worden.'); return; }
     if (w) w.location = data.signedUrl; else location.href = data.signedUrl; return;
   }
-  if (a === 'docdel') { const doc = S.docs.find(x => x.id === d.id); await q(sb.from('documents').delete().eq('id', d.id)); if (doc && doc.file_path) sb.storage.from('documenten').remove([doc.file_path]); S.docs = S.docs.filter(x => x.id !== d.id); Object.values(S.sel).forEach(s => s.delete(d.id)); S.confirm = null; render(); toast('Document verwijderd.'); return; }
+  if (a === 'docdel') { const doc = S.docs.find(x => x.id === d.id); await q(sb.from('documents').delete().eq('id', d.id)); if (doc && doc.file_path) { const dir = doc.file_path.split('/').slice(0, -1).join('/'); sb.storage.from('documenten').list(dir, { limit: 100 }).then(({ data }) => { const ps = (data || []).map(f => `${dir}/${f.name}`); if (ps.length) sb.storage.from('documenten').remove(ps); }); delete S.photoUrls[doc.id]; } S.docs = S.docs.filter(x => x.id !== d.id); Object.values(S.sel).forEach(s => s.delete(d.id)); S.confirm = null; render(); toast('Document verwijderd.'); return; }
   if (a === 'ask') { S.sel.qa = new Set([d.id]); S.tab = 'uitleg'; render(); window.scrollTo(0, 0); return; }
   // toetsplanner
   if (a === 'examadd') {
@@ -1282,6 +1409,8 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target;
+  if (t.dataset && t.dataset.photo) { const files = [...(t.files || [])]; t.value = ''; if (files.length) { const ti = $('#phTitle'); if (ti) S.phTitle = ti.value; const pv = $('#phVak'); if (pv) S.phVak = pv.value; await addPhotos(files); render(); } return; }
+  if (t.id === 'phVak') { S.phVak = t.value; return; }
   if (t.dataset && t.dataset.move) {
     const id = t.dataset.move; const vak_id = t.value || null;
     try { await q(sb.from('documents').update({ vak_id }).eq('id', id)); S.docs.find(x => x.id === id).vak_id = vak_id; toast(`Verplaatst naar ${vakNaam(vak_id)}.`); render(); } catch (err) { dbErr(err); }
@@ -1292,6 +1421,7 @@ document.addEventListener('change', async e => {
   }
 });
 document.addEventListener('input', e => {
+  if (e.target.id === 'phTitle') S.phTitle = e.target.value;
   if (e.target.dataset && e.target.dataset.filter) { S.admin.filter = e.target.value; render(); }
 });
 document.addEventListener('keydown', e => {
@@ -1310,10 +1440,10 @@ document.addEventListener('keydown', e => {
   }
 });
 document.addEventListener('paste', e => {
-  if ($('#app').hidden || S.tab !== 'vakken' || S.openVak === null) return;
+  if ($('#app').hidden || !((S.tab === 'vakken' && S.openVak !== null) || S.tab === 'vandaag')) return;
   if (/INPUT|TEXTAREA/.test(e.target.tagName)) return;
   const imgs = [...(e.clipboardData && e.clipboardData.files || [])].filter(f => f.type.startsWith('image/'));
-  if (imgs.length) { e.preventDefault(); handleFiles(imgs, S.openVak || null); }
+  if (imgs.length) { e.preventDefault(); addPhotos(imgs).then(render); }
 });
 
 /* ================= opstarten ================= */
