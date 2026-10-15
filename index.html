@@ -240,6 +240,14 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .livetxt{font-size:.9rem;color:var(--muted);font-style:italic;min-height:1.4em}
 .speaking{font-size:.85rem;color:var(--muted);display:flex;gap:8px;align-items:center}
 @media (prefers-reduced-motion: reduce){.mic.on{animation:none}}
+.reqcta{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
+.check input{margin-top:3px}
+.req{display:grid;gap:6px;padding:14px 0;border-bottom:1px solid var(--line)}
+.req:first-child{padding-top:0}
+.req .quote{background:var(--paper);border-radius:8px;padding:10px 12px;font-size:.92rem;white-space:pre-wrap;overflow-wrap:anywhere}
+.badge{font-family:var(--f-mono);font-size:.75rem;background:var(--bad);color:#fff;border-radius:20px;padding:0 6px;margin-left:4px}
 .steps{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
 .steps div{display:grid;gap:4px;border-top:3px solid var(--hl-solid);padding-top:10px}
 .meter{display:flex;align-items:center;gap:8px}
@@ -338,12 +346,12 @@ const S = {
   qa: { msgs: [], out: '' },
   admin: { rows: null, newRole: 'student', bulk: false }
 };
-const G = { step: 'email', email: '', msg: '', err: '', busy: false, resendAt: 0, reason: '' };
+const G = { step: 'email', email: '', msg: '', err: '', busy: false, resendAt: 0, reason: '', rq: {}, noAccount: false, canRequest: false };
 
 /* ================= inloggen ================= */
 function authErr(e) {
   const m = (e && e.message || '').toLowerCase();
-  if (m.includes('signups not allowed') || m.includes('user not found')) return 'Dit e-mailadres heeft nog geen Leerpuls-account. Vraag je beheerder om je toe te voegen.';
+  if (m.includes('signups not allowed') || m.includes('user not found')) { G.noAccount = true; return 'Dit e-mailadres heeft nog geen Leerpuls-account. Vraag hieronder toegang aan.'; }
   if (m.includes('security purposes') || m.includes('rate limit')) return 'Je hebt net al een code aangevraagd. Wacht een minuut en probeer het opnieuw.';
   if (m.includes('invalid login credentials')) return 'E-mailadres of wachtwoord klopt niet. Nog geen wachtwoord ingesteld? Log dan in met een code.';
   if (m.includes('expired') || m.includes('invalid') && m.includes('token')) return 'Deze code klopt niet of is verlopen. Vraag een nieuwe code aan.';
@@ -358,7 +366,20 @@ function renderGate() {
   if (g.step === 'email') body = `<h2>Inloggen</h2><p class="muted small">Vul je e-mailadres in. We sturen je een inlogcode.</p>
     <form id="fEmail" class="stack"><label class="field"><span>E-mailadres</span><input id="gEmail" type="email" autocomplete="email" required value="${esc(g.email)}"></label>${err}${msg}
     <button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Code versturen…' : 'Stuur inlogcode'}</button></form>
-    <button class="link" data-gate="password">Inloggen met wachtwoord</button>`;
+    <button class="link" data-gate="password">Inloggen met wachtwoord</button>
+    <div class="reqcta"><span class="small muted">Nog geen account?</span><button class="btn ${g.noAccount ? 'hl' : 'ghost'} wide" data-gate="request">Toegang aanvragen</button></div>`;
+  if (g.step === 'request') body = `<h2>Toegang aanvragen</h2><p class="muted small">Vul je gegevens in. Je krijgt een mail zodra je aanvraag is goedgekeurd; daarna log je in met een code.</p>
+    <form id="fRequest" class="stack" novalidate>
+      <label class="field"><span>Voor- en achternaam</span><input id="rqName" autocomplete="name" required maxlength="80" value="${esc(g.rq.name || '')}"></label>
+      <label class="field"><span>E-mailadres</span><input id="rqEmail" type="email" autocomplete="email" required value="${esc(g.rq.email || g.email || '')}"></label>
+      <label class="field"><span>Opleiding en school</span><input id="rqOpl" maxlength="120" placeholder="bijv. Commerciële Economie, Hogeschool Leiden" value="${esc(g.rq.opleiding || '')}"></label>
+      <label class="field"><span>Klas of groep (optioneel)</span><input id="rqGroep" maxlength="60" placeholder="bijv. CE1A" value="${esc(g.rq.groep || '')}"></label>
+      <label class="field"><span>Waarvoor wil je Leerpuls gebruiken? (optioneel)</span><textarea id="rqMot" maxlength="1000" placeholder="bijv. oefenen voor mijn tentamens en verkoopgesprekken">${esc(g.rq.motivatie || '')}</textarea></label>
+      <div class="hp" aria-hidden="true"><label>Website<input id="rqSite" tabindex="-1" autocomplete="off"></label></div>
+      <label class="check"><input type="checkbox" id="rqOk" ${g.rq.akkoord ? 'checked' : ''}><span>Ik ga akkoord dat Leerpuls mijn naam en e-mailadres bewaart om mijn aanvraag te behandelen.</span></label>
+      ${err}<button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Versturen…' : 'Verstuur aanvraag'}</button></form>
+    <button class="link" data-gate="email">← Terug naar inloggen</button>`;
+  if (g.step === 'requested') body = `<h2>Aanvraag verstuurd 🎉</h2><p>Bedankt${g.rq.name ? ', ' + esc(g.rq.name.split(' ')[0]) : ''}! We hebben je aanvraag ontvangen en je krijgt een bevestiging op <b>${esc(g.rq.email)}</b>.</p><p class="small muted">Zodra je aanvraag is goedgekeurd, krijg je nog een mail. Daarna log je hier in met je e-mailadres.</p><button class="btn ghost" data-gate="email">Terug naar inloggen</button>`;
   if (g.step === 'code') body = `<h2>Vul je code in</h2><p class="muted small">We hebben een inlogcode gestuurd naar <b>${esc(g.email)}</b>. Kijk ook even in je spam.</p>
     <form id="fCode" class="stack"><label class="field"><span>Inlogcode</span><input id="gCode" class="codein" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required></label>${err}${msg}
     <button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Controleren…' : 'Inloggen'}</button></form>
@@ -373,14 +394,14 @@ function renderGate() {
     <label class="field"><span>Herhaal wachtwoord</span><input id="gNew2" type="password" autocomplete="new-password" minlength="8" required></label>${err}
     <button class="btn wide" ${g.busy ? 'disabled' : ''}>Wachtwoord opslaan</button></form>
     <button class="link" data-gate="skip">Later instellen</button>`;
-  if (g.step === 'blocked') body = `<h2>Geen toegang</h2><p>${esc(g.reason)}</p><p class="small muted">Vragen? Mail naar <span class="mono">${OWNER}</span>.</p><button class="btn ghost" data-gate="logout">Terug naar inloggen</button>`;
+  if (g.step === 'blocked') body = `<h2>Geen toegang</h2><p>${esc(g.reason)}</p><p class="small muted">Vragen? Mail naar <span class="mono">${OWNER}</span>.</p><div class="row">${g.canRequest ? `<button class="btn hl" data-gate="request">Toegang aanvragen</button>` : ''}<button class="btn ghost" data-gate="logout">Terug naar inloggen</button></div>`;
   if (g.step === 'loading') body = `<p class="muted">Bezig met laden…</p>`;
   $('#gate').innerHTML = `<div class="gatebox"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div><section class="panel">${body}</section>
   <p class="small muted">Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg.</p></div>`;
   const focus = { email: '#gEmail', code: '#gCode', password: g.email ? '#gPw' : '#gEmail2', setpw: '#gNew' }[g.step];
   if (focus && $(focus)) $(focus).focus();
 }
-function showGate(step, extra = {}) { Object.assign(G, { step, err: '', msg: '', busy: false }, extra); $('#app').hidden = true; $('#gate').hidden = false; renderGate(); }
+function showGate(step, extra = {}) { Object.assign(G, { step, err: '', msg: '', busy: false, canRequest: false }, extra); if (step !== 'email') G.noAccount = false; $('#app').hidden = true; $('#gate').hidden = false; renderGate(); }
 
 async function sendCode(email) {
   G.busy = true; G.err = ''; renderGate();
@@ -392,7 +413,21 @@ async function sendCode(email) {
 document.addEventListener('submit', async e => {
   const f = e.target; if (!f.id || !f.id.startsWith('f')) return;
   e.preventDefault();
-  if (f.id === 'fEmail') { const email = $('#gEmail').value.trim().toLowerCase(); G.email = email; await sendCode(email); }
+  if (f.id === 'fEmail') { const email = $('#gEmail').value.trim().toLowerCase(); G.email = email; G.noAccount = false; await sendCode(email); }
+  if (f.id === 'fRequest') {
+    const rq = { name: $('#rqName').value.trim(), email: $('#rqEmail').value.trim().toLowerCase(), opleiding: $('#rqOpl').value.trim(), groep: $('#rqGroep').value.trim(), motivatie: $('#rqMot').value.trim(), akkoord: $('#rqOk').checked, website: $('#rqSite').value };
+    G.rq = rq;
+    if (rq.name.length < 2) { G.err = 'Vul je voor- en achternaam in.'; renderGate(); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rq.email)) { G.err = 'Vul een geldig e-mailadres in.'; renderGate(); return; }
+    if (!rq.akkoord) { G.err = 'Vink aan dat je akkoord gaat, anders kunnen we je aanvraag niet bewaren.'; renderGate(); return; }
+    G.busy = true; G.err = ''; renderGate();
+    try { await publicFn({ action: 'request', ...rq }); G.email = rq.email; showGate('requested'); }
+    catch (e) {
+      G.busy = false;
+      G.err = ({ has_account: 'Dit e-mailadres heeft al een account. Ga terug en log in met een code.', pending: 'Er loopt al een aanvraag voor dit e-mailadres. Je krijgt een mail zodra hij is behandeld.', busy: 'Er komen nu veel aanvragen binnen. Probeer het over een uur opnieuw.', bad_email: 'Vul een geldig e-mailadres in.', bad_name: 'Vul je voor- en achternaam in.', no_consent: 'Vink aan dat je akkoord gaat.' })[e.error] || 'Versturen lukte niet. Controleer je internet en probeer het opnieuw.';
+      renderGate();
+    }
+  }
   if (f.id === 'fCode') {
     const token = $('#gCode').value.replace(/\s/g, ''); G.busy = true; G.err = ''; renderGate();
     const { error } = await sb.auth.verifyOtp({ email: G.email, token, type: 'email' });
@@ -428,6 +463,7 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-gate]'); if (!b) return;
   const a = b.dataset.gate;
   if (a === 'password') showGate('password');
+  if (a === 'request') { if (sb) { const { data: { session } } = await sb.auth.getSession(); if (session) { G.rq = { ...G.rq, email: session.user.email }; await sb.auth.signOut(); } } showGate('request'); }
   if (a === 'email') showGate('email');
   if (a === 'resend') { if (Date.now() < G.resendAt) { G.err = `Wacht nog ${Math.ceil((G.resendAt - Date.now()) / 1000)} seconden voor een nieuwe code.`; renderGate(); return; } await sendCode(G.email); G.msg = 'Nieuwe code verstuurd.'; renderGate(); }
   if (a === 'skip') { try { sessionStorage.setItem('lp_skip_pw', '1'); } catch {} showApp(); }
@@ -442,7 +478,7 @@ async function start(viaCode) {
   if (!session) { started = false; showGate('email'); return; }
   S.user = session.user;
   const { data: acc, error } = await sb.rpc('link_account');
-  if (error || !acc || !acc.email) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Dit e-mailadres heeft (nog) geen Leerpuls-account. Vraag je beheerder om je toe te voegen.' }); return; }
+  if (error || !acc || !acc.email) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Dit e-mailadres heeft (nog) geen Leerpuls-account.', canRequest: true }); return; }
   if (!acc.active) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Je account is gepauzeerd door de beheerder.' }); return; }
   S.account = acc; S.isAdmin = acc.email === OWNER || acc.role === 'admin';
   let skip = false; try { skip = sessionStorage.getItem('lp_skip_pw') === '1'; } catch {}
@@ -451,7 +487,7 @@ async function start(viaCode) {
 }
 async function showApp() {
   $('#gate').hidden = true; $('#app').hidden = false;
-  render(); await loadAll(); render();
+  render(); await loadAll(); if (S.isAdmin) await loadRequests(); render();
 }
 if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { started = false; showGate('email'); } });
 
@@ -721,7 +757,7 @@ async function handleFiles(files, vakId, title) {
 /* ================= weergaven ================= */
 function tabs() {
   const t = [['vandaag', 'Vandaag'], ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
-  if (S.isAdmin) t.push(['beheer', 'Beheer']);
+  if (S.isAdmin) t.push(['beheer', 'Beheer', pendingReqs().length]);
   t.push(['account', 'Account']);
   return t;
 }
@@ -733,7 +769,7 @@ function view() {
   if (S.busy) h += `<div class="busy" role="status"><span class="dot"></span>${esc(S.busy)}</div>`;
   h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
   <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
-  h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}</button>`).join('')}</nav>`;
+  h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && pendingReqs().length ? `<span class="badge" aria-label="nieuwe aanvragen">${pendingReqs().length}</span>` : ''}</button>`).join('')}</nav>`;
   h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, account: vAccount })[S.tab]();
   return h;
 }
@@ -773,6 +809,7 @@ function vVandaag() {
       <div><b>Oefen ermee</b><span class="muted small">Oefentoetsen met cijfer, flashcards, gesprekken en een leerplan tot je toets.</span></div></div>
       <div><button class="btn" data-act="tab" data-tab="vakken">Eerste vak aanmaken</button></div></section>`;
   }
+  if (S.isAdmin && pendingReqs().length) h += `<div class="notice row between"><span><b>${plural(pendingReqs().length, 'nieuwe aanvraag', 'nieuwe aanvragen')}</b> voor Leerpuls.</span><button class="btn sm" data-act="tab" data-tab="beheer">Bekijk</button></div>`;
   if (S.vakken.length || S.photos.length) h += photoPanel(null, { withVak: true, mobileOnly: true, heading: "Snel foto's toevoegen" });
   h += `<div class="grid2">`;
   if (tasks.length) h += `<section class="panel"><h3>Vandaag op je leerplan</h3><div class="plan">${tasks.map(({ e, t, i }) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span style="flex:1;display:grid;gap:2px"><span class="tt">${esc(t.taak)}</span><span class="small muted">${esc(e.naam)} · ${esc(vakNaam(e.vak_id))}${t.datum < today ? ' · ingehaald van ' + fmtDay(t.datum) : ''}</span></span></button>`).join('')}</div></section>`;
@@ -1067,6 +1104,22 @@ function vUitleg() {
 }
 
 /* ---- Beheer ---- */
+function reqSection() {
+  const A = S.admin;
+  if (A.reqErr) return `<section class="panel"><h3>Aanvragen</h3><div class="notice">De tabel voor aanvragen bestaat nog niet. Draai <b>aanvragen.sql</b> in Supabase (SQL Editor) en upload de nieuwe Edge Function "Admin".</div></section>`;
+  const reqs = A.reqs || []; const open = reqs.filter(r => r.status === 'nieuw'); const done = reqs.filter(r => r.status !== 'nieuw').slice(0, 20);
+  let h = `<section class="panel"><div class="row between"><h3>Aanvragen</h3><span class="label">${open.length ? plural(open.length, 'nieuwe', 'nieuwe') : 'geen nieuwe'}</span></div>`;
+  if (!open.length) h += `<p class="small muted">Geen openstaande aanvragen. Nieuwe aanvragen komen binnen via de knop "Toegang aanvragen" op het inlogscherm, en je krijgt er een mail van.</p>`;
+  else h += `<div>${open.map(r => { const conf = S.confirm === 'rej:' + r.id;
+    return `<div class="req"><div class="row between"><b>${esc(r.name)}</b><span class="small muted">${fmtDate(r.created_at)}</span></div>
+      <span class="small mono">${esc(r.email)}</span>
+      ${r.opleiding || r.groep ? `<span class="small muted">${esc([r.opleiding, r.groep].filter(Boolean).join(' · '))}</span>` : ''}
+      ${r.motivatie ? `<div class="quote">${esc(r.motivatie)}</div>` : ''}
+      <div class="row">${conf ? `<span class="small">Afwijzen?</span><button class="btn sm danger" data-act="reqreject" data-id="${r.id}" data-mail="1">Afwijzen en mail sturen</button><button class="btn sm ghost" data-act="reqreject" data-id="${r.id}">Afwijzen zonder mail</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>`
+        : `<button class="btn sm hl" data-act="reqapprove" data-id="${r.id}" ${S.busy ? 'disabled' : ''}>Goedkeuren</button><button class="btn sm ghost" data-act="confirm" data-key="rej:${r.id}">Afwijzen</button>`}</div></div>`; }).join('')}</div>`;
+  if (done.length) h += `<details><summary class="link small" style="cursor:pointer">Eerder behandeld (${done.length})</summary><div class="list" style="margin-top:8px">${done.map(r => `<div class="item"><div class="main"><span class="t">${esc(r.name)}</span><span class="small muted mono">${esc(r.email)}</span></div><span class="pill ${r.status === 'goedgekeurd' ? 'good' : 'bad'}">${r.status}</span><span class="small muted">${r.handled_at ? fmtDate(r.handled_at) : ''}</span></div>`).join('')}</div></details>`;
+  return h + `</section>`;
+}
 function vBeheer() {
   if (!S.isAdmin) return '';
   const A = S.admin; const rows = A.rows;
@@ -1082,6 +1135,7 @@ function vBeheer() {
     <div class="stack" style="gap:2px"><span class="label">AI-acties vandaag</span><span class="cijfer" style="font-size:2rem">${today}</span></div>
     <div class="stack" style="gap:2px"><span class="label">AI-acties 7 dagen</span><span class="cijfer" style="font-size:2rem">${week}</span></div></div>
     <p class="small muted">Je ziet alleen aantallen per student, nooit hun documenten, antwoorden of gesprekken.</p></section>
+  ${reqSection()}
   <section class="panel"><div class="row between"><h3>Account toevoegen</h3><button class="link small" data-act="adminbulk">${A.bulk ? 'Eén account toevoegen' : 'Meerdere tegelijk toevoegen'}</button></div>
   ${A.bulk ? `<label class="field"><span>Eén per regel: e-mailadres, of naam;e-mailadres</span><textarea id="adBulk" placeholder="Sanne de Vries;sanne@student.nl&#10;tim@student.nl"></textarea></label>`
     : `<div class="fields"><label class="field"><span>E-mailadres</span><input id="adEmail" type="email" placeholder="naam@student.nl"></label><label class="field"><span>Naam</span><input id="adName" placeholder="Voor- en achternaam"></label></div>`}
@@ -1397,11 +1451,27 @@ ${stof}` });
 }
 
 /* ================= beheer ================= */
+async function loadRequests() {
+  if (!S.isAdmin) return;
+  const { data, error } = await sb.from('aanvragen').select('*').order('created_at', { ascending: false }).limit(200);
+  if (error) { console.warn('aanvragen', error); S.admin.reqs = null; S.admin.reqErr = true; return; }
+  S.admin.reqs = data || []; S.admin.reqErr = false;
+}
+const pendingReqs = () => (S.admin.reqs || []).filter(r => r.status === 'nieuw');
 async function loadAdmin() {
   if (S.admin.loading) return; S.admin.loading = true;
   try { S.admin.rows = await q(sb.rpc('admin_overview')); }
   catch (e) { console.error(e); toast('Accounts laden lukte niet.'); S.admin.rows = []; }
-  finally { S.admin.loading = false; render(); }
+  try { await loadRequests(); } catch (e) { console.error(e); }
+  S.admin.loading = false; render();
+}
+async function publicFn(body) {
+  let res;
+  try { res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.ADMIN_FUNCTION || 'Admin'}`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_KEY, Authorization: `Bearer ${CFG.SUPABASE_KEY}` }, body: JSON.stringify(body) }); }
+  catch { throw { error: 'network' }; }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw { error: j.error || 'HTTP ' + res.status };
+  return j;
 }
 async function adminFn(body) {
   const { data: { session } } = await sb.auth.getSession();
@@ -1558,6 +1628,20 @@ document.addEventListener('click', async e => {
   if (a === 'qaclear') { S.qa.msgs = []; render(); return; }
   // beheer
   if (a === 'adminreload') { S.admin.rows = null; render(); return; }
+  if (a === 'reqapprove') {
+    const r = (S.admin.reqs || []).find(x => x.id === d.id); setBusy(`Account aanmaken voor ${r ? r.name : ''}…`);
+    try { const res = await adminFn({ action: 'approve', id: d.id, sendMail: true }); toast(res.existed ? 'Deze persoon had al een account; de aanvraag is afgesloten.' : `Goedgekeurd${res.mailed ? ' en welkomstmail verstuurd' : ''}.`); S.admin.rows = null; }
+    catch (err) { toast('Goedkeuren lukte niet: ' + (err.error === 'handled' ? 'deze aanvraag is al behandeld.' : (err.error || 'fout') + (err.message ? ' – ' + err.message : '')), 8000); await loadRequests(); }
+    finally { setBusy(null); }
+    return;
+  }
+  if (a === 'reqreject') {
+    setBusy('Aanvraag afwijzen…');
+    try { const res = await adminFn({ action: 'reject', id: d.id, sendMail: !!d.mail }); toast(`Aanvraag afgewezen${res.mailed ? ' en mail verstuurd' : ''}.`); S.confirm = null; await loadRequests(); }
+    catch (err) { toast('Afwijzen lukte niet: ' + (err.error || 'fout'), 7000); }
+    finally { setBusy(null); }
+    return;
+  }
   if (a === 'adminbulk') { S.admin.bulk = !S.admin.bulk; render(); return; }
   if (a === 'admincreate') { await adminCreate(); return; }
   if (a === 'admintoggle') { const r = S.admin.rows.find(x => x.email === d.email); await q(sb.from('accounts').update({ active: !r.active }).eq('email', d.email)); r.active = !r.active; render(); toast(r.active ? 'Account geactiveerd.' : 'Account gepauzeerd.'); return; }
