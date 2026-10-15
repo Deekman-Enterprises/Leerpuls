@@ -6,6 +6,14 @@
 <title>Leerpuls</title>
 <meta name="description" content="Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg met AI. Leerpuls by Deekman Enterprises.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23161D36'/%3E%3Crect x='6' y='17' width='20' height='6' fill='%23F4E840'/%3E%3Cpath d='M9 8v14h13' stroke='%23fff' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#161D36">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Leerpuls">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@500&display=swap">
@@ -232,6 +240,11 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 @media (prefers-reduced-motion: reduce){.mood .bar i{transition:none}}
 .voicebar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:.9rem}
 .voicebar label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.voicebar select{width:auto;padding:4px 8px;font-size:.9rem}
+.install .appicon{border-radius:12px;flex:none}
+.isteps{margin:0;padding-left:1.3em;display:grid;gap:6px}
+.isteps .ishare{width:1.15em;height:1.15em;vertical-align:-.2em}
+.gateinst{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);display:grid;gap:8px}
 .mic{display:inline-flex;align-items:center;gap:8px;font-weight:700;border-radius:999px;padding:10px 18px;border:1px solid var(--ink);background:var(--card);color:var(--ink);cursor:pointer;line-height:1.2}
 .mic svg{width:20px;height:20px}
 .mic.on{background:var(--bad);border-color:var(--bad);color:#fff;animation:micpulse 1.2s ease-in-out infinite}
@@ -386,6 +399,52 @@ function authErr(e) {
   if (m.includes('same password') || m.includes('different from the old')) return 'Kies een ander wachtwoord dan je huidige.';
   return 'Er ging iets mis. Probeer het opnieuw.';
 }
+/* ---- app op beginscherm (installeerbaar, PWA) ---- */
+const UA = navigator.userAgent || '';
+const INST = {
+  evt: null, open: false,
+  ios: /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+  android: /Android/i.test(UA),
+  inApp: /FBAN|FBAV|Instagram|WhatsApp|Snapchat|TikTok|musical_ly|LinkedInApp|\bLine\//i.test(UA)
+};
+INST.mobile = INST.ios || INST.android;
+function isStandalone() { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch { return false; } }
+function instHidden() { try { return localStorage.getItem('lp_inst_hide') === '1'; } catch { return false; } }
+function rerender() { if (!$('#app').hidden) render(); else if (!$('#gate').hidden) renderGate(); }
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INST.evt = e; rerender(); });
+window.addEventListener('appinstalled', () => { INST.evt = null; INST.open = false; toast('Leerpuls staat nu op je beginscherm 🎉'); rerender(); });
+if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+const ICON_SHARE = '<svg class="ishare" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Deel-knop"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+function installSteps(gate) {
+  if (INST.ios) return `<ol class="isteps">${INST.inApp ? '<li>Je zit nu in de browser van een andere app (zoals WhatsApp of Instagram). Tik op <b>⋯</b> of het kompas-icoon en kies <b>Open in Safari</b>.</li>' : ''}
+    <li>Tik op de <b>Deel-knop</b> ${ICON_SHARE} (in Safari onderaan, op iPad en in Chrome bovenaan).</li>
+    <li>Scroll omlaag en tik op <b>Zet op beginscherm</b>.</li><li>Tik op <b>Voeg toe</b>.</li></ol>
+    <p class="small muted">Open Leerpuls daarna via het nieuwe icoon.${gate ? '' : ' In de app log je één keer opnieuw in.'}</p>`;
+  if (INST.android) return `<ol class="isteps">${INST.inApp ? '<li>Je zit nu in de browser van een andere app (zoals WhatsApp of Instagram). Tik op <b>⋮</b> en kies <b>Openen in Chrome</b>.</li>' : ''}
+    <li>Tik rechtsboven op het menu <b>⋮</b>.</li><li>Kies <b>App installeren</b> of <b>Toevoegen aan startscherm</b>.</li><li>Bevestig met <b>Installeren</b> of <b>Toevoegen</b>.</li></ol>
+    <p class="small muted">Open Leerpuls daarna via het nieuwe icoon op je startscherm.</p>`;
+  return `<ol class="isteps"><li><b>Chrome of Edge:</b> klik rechts in de adresbalk op het installatie-icoon, of open het menu <b>⋮</b> en kies <b>Leerpuls installeren</b> (soms onder <b>Opslaan en delen</b>).</li>
+    <li><b>Safari op Mac:</b> kies in het menu <b>Archief</b> → <b>Voeg toe aan Dock</b>.</li></ol>`;
+}
+function installPanel(where) {
+  if (isStandalone()) return where === 'account' ? `<section class="panel"><h3>Leerpuls als app</h3><p class="small muted">Je gebruikt Leerpuls nu als app. Top! 👍</p></section>` : '';
+  if (where === 'vandaag' && (!INST.mobile || instHidden())) return '';
+  const btn = INST.evt ? `<button class="btn hl" data-inst="go">📲 Installeer Leerpuls</button>` : `<button class="btn ${where === 'vandaag' ? 'hl' : 'ghost'}" data-inst="go" aria-expanded="${INST.open}">${INST.open ? 'Verberg uitleg' : '📲 Laat zien hoe'}</button>`;
+  return `<section class="panel install"><div class="row" style="gap:14px;flex-wrap:nowrap;align-items:flex-start"><img src="icons/icon-192.png" alt="" width="52" height="52" class="appicon"><div style="display:grid;gap:4px"><h3>${INST.mobile ? 'Zet Leerpuls op je beginscherm' : 'Installeer Leerpuls als app'}</h3><p class="small muted">Open Leerpuls met één tik, schermvullend en zonder adresbalk, net als een gewone app.</p></div></div>
+    ${INST.open && !INST.evt ? installSteps() : ''}
+    <div class="row">${btn}${where === 'vandaag' ? `<button class="link small" data-inst="hide">Niet nu</button>` : ''}</div></section>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-inst]'); if (!b) return;
+  const a = b.dataset.inst;
+  if (a === 'hide') { try { localStorage.setItem('lp_inst_hide', '1'); } catch {} toast('Later alsnog? Je vindt het onder Account.'); }
+  if (a === 'go') {
+    if (INST.evt) { const ev = INST.evt; INST.evt = null; try { await ev.prompt(); await ev.userChoice; } catch {} }
+    else INST.open = !INST.open;
+  }
+  rerender();
+});
+
 function renderGate() {
   const g = G; let body = '';
   const err = g.err ? `<p class="err" role="alert">${esc(g.err)}</p>` : '';
@@ -394,7 +453,8 @@ function renderGate() {
     <form id="fEmail" class="stack"><label class="field"><span>E-mailadres</span><input id="gEmail" type="email" autocomplete="email" required value="${esc(g.email)}"></label>${err}${msg}
     <button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Code versturen…' : 'Stuur inlogcode'}</button></form>
     <button class="link" data-gate="password">Inloggen met wachtwoord</button>
-    <div class="reqcta"><span class="small muted">Nog geen account?</span><button class="btn ${g.noAccount ? 'hl' : 'ghost'} wide" data-gate="request">Toegang aanvragen</button></div>`;
+    <div class="reqcta"><span class="small muted">Nog geen account?</span><button class="btn ${g.noAccount ? 'hl' : 'ghost'} wide" data-gate="request">Toegang aanvragen</button></div>
+    ${INST.mobile && !isStandalone() ? `<div class="gateinst">${INST.evt ? `<button class="link" data-inst="go">📲 Installeer Leerpuls als app</button>` : `<button class="link" data-inst="go" aria-expanded="${INST.open}">📲 Leerpuls op je beginscherm zetten</button>${INST.open ? `${INST.ios ? `<p class="small muted">Tip: doe dit vóór je inlogt, dan log je meteen in de app in.</p>` : ''}${installSteps(true)}` : ''}`}</div>` : ''}`;
   if (g.step === 'request') body = `<h2>Toegang aanvragen</h2><p class="muted small">Vul je gegevens in. Je krijgt een mail zodra je aanvraag is goedgekeurd; daarna log je in met een code.</p>
     <form id="fRequest" class="stack" novalidate>
       <div class="field"><span>Ik ben</span><div class="seg" role="group"><button type="button" data-gate="rqtype" data-v="student" aria-pressed="${(g.rq.type || 'student') === 'student'}">Student</button><button type="button" data-gate="rqtype" data-v="docent" aria-pressed="${g.rq.type === 'docent'}">Docent</button></div></div>
@@ -845,7 +905,7 @@ function vVandaag() {
       <div><button class="btn" data-act="tab" data-tab="vakken">Eerste vak aanmaken</button></div></section>`;
   }
   if (S.isAdmin && pendingReqs().length) h += `<div class="notice row between"><span><b>${plural(pendingReqs().length, 'nieuwe aanvraag', 'nieuwe aanvragen')}</b> voor Leerpuls.</span><button class="btn sm" data-act="tab" data-tab="beheer">Bekijk</button></div>`;
-  h += consentCard() + opdrPanelStudent();
+  h += installPanel('vandaag') + consentCard() + opdrPanelStudent();
   if (isTeacher() && S.T.klassen.length) h += `<section class="panel"><div class="row between"><h3>Je klassen</h3><button class="btn sm" data-act="tab" data-tab="klassen">Naar Klassen</button></div><div class="list">${S.T.klassen.map(k => { const ops = S.opdr.filter(o => o.klas_id === k.id); const open = ops.filter(o => !o.deadline || o.deadline >= todayStr()).length; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}</span><span class="small muted">${plural(open, 'lopende opdracht', 'lopende opdrachten')} · ${S.kdocs.filter(d => d.klas_id === k.id).length} lesstof</span></div><button class="btn sm ghost" data-act="klassel" data-id="${k.id}" data-go="1">Open</button></div>`; }).join('')}</div></section>`;
   if (S.vakken.length || S.photos.length) h += photoPanel(null, { withVak: true, mobileOnly: true, heading: "Snel foto's toevoegen" });
   h += `<div class="grid2">`;
@@ -986,9 +1046,11 @@ const SCEN = {
 /* ---- spraak: praten en voorlezen ---- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const VP0 = (() => { try { return JSON.parse(localStorage.getItem('lp_voice') || '{}'); } catch { return {}; } })();
-const V = { canListen: !!SR, canSpeak: 'speechSynthesis' in window, listening: false, rec: null, final: '', interim: '', speaking: false, voice: null, unlocked: false };
-Object.assign(S.chat, { read: !!VP0.read, hands: !!VP0.hands });
-function savePrefs() { try { localStorage.setItem('lp_voice', JSON.stringify({ read: S.chat.read, hands: S.chat.hands })); } catch {} }
+const V = { canListen: !!SR, canSpeak: 'speechSynthesis' in window, listening: false, rec: null, final: '', interim: '', speaking: false, voice: null, unlocked: false,
+  audio: null, audioUnlocked: false, seq: 0, endCb: null, ttsOff: '', urls: [] };
+const STEMMEN = { fenna: 'Fenna (vrouw)', maarten: 'Maarten (man)', colette: 'Colette (vrouw)', browser: 'Browserstem (eenvoudig)' };
+Object.assign(S.chat, { read: !!VP0.read, hands: !!VP0.hands, stem: STEMMEN[VP0.stem] ? VP0.stem : 'fenna' });
+function savePrefs() { try { localStorage.setItem('lp_voice', JSON.stringify({ read: S.chat.read, hands: S.chat.hands, stem: S.chat.stem })); } catch {} }
 function pickVoice() {
   if (!V.canSpeak) return null;
   const vs = speechSynthesis.getVoices().filter(v => /^nl(-|_|$)/i.test(v.lang));
@@ -997,13 +1059,105 @@ function pickVoice() {
   return vs[0] || null;
 }
 if (V.canSpeak) { V.voice = pickVoice(); try { speechSynthesis.addEventListener('voiceschanged', () => { V.voice = pickVoice(); }); } catch {} }
+// korte stille wav om afspelen te 'ontgrendelen' (iPhone speelt anders na een AI-antwoord niets af)
+function silentWav() {
+  const n = 1200, b = new ArrayBuffer(44 + n * 2), d = new DataView(b), w = (o, t) => { for (let i = 0; i < t.length; i++) d.setUint8(o + i, t.charCodeAt(i)); };
+  w(0, 'RIFF'); d.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+  d.setUint32(24, 24000, true); d.setUint32(28, 48000, true); d.setUint16(32, 2, true); d.setUint16(34, 16, true); w(36, 'data'); d.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+}
 function unlockSpeech() {
+  if (!V.audioUnlocked && typeof Audio !== 'undefined') {
+    V.audioUnlocked = true;
+    try { V.audio = V.audio || new Audio(); V.audio.src = silentWav(); const p = V.audio.play(); if (p && p.catch) p.catch(() => {}); } catch {}
+  }
   if (!V.canSpeak || V.unlocked) return; V.unlocked = true;
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {}
 }
 function speakable(t) { return cleanTags(t).replace(/\*[^*]{1,40}\*/g, ' ').replace(/[#_>`]/g, '').replace(/\s+/g, ' ').trim(); }
+/* natuurlijke stem via Azure (Edge Function Ai, actie tts); valt terug op de browserstem */
+function useNatural() { return S.chat.stem !== 'browser' && !V.ttsOff && typeof Audio !== 'undefined'; }
+function ttsChunks(t) {
+  const sents = t.match(/[^.!?…]+[.!?…]*["')]*\s*/g) || [t]; const out = []; let cur = '';
+  for (const x of sents) {
+    const max = out.length ? 600 : 220; // eerste stukje kort: dan hoor je sneller iets
+    if (cur && (cur + x).length > max) { out.push(cur.trim()); cur = ''; }
+    cur += x;
+    while (cur.length > 1400) { out.push(cur.slice(0, 1400)); cur = cur.slice(1400); }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
+}
+async function ttsFetch(text, voice, rate) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw { code: 'unauthorized' };
+  let res;
+  try {
+    res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.AI_FUNCTION || 'Ai'}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY },
+      body: JSON.stringify({ action: 'tts', text, voice, rate })
+    });
+  } catch { throw { code: 'network' }; }
+  if (!res.ok) { const j = await res.json().catch(() => ({})); throw { code: j.error || 'tts_upstream', status: j.status }; }
+  const blob = await res.blob();
+  if (!blob.size) throw { code: 'tts_upstream' };
+  const url = URL.createObjectURL(blob); V.urls.push(url); return url;
+}
+const TTS_MSG = {
+  no_tts: 'De natuurlijke stem is nog niet ingesteld. Je hoort nu de browserstem.',
+  tts_setup: 'De natuurlijke stem is nog niet klaar (stem.sql is nog niet gedraaid). Je hoort nu de browserstem.',
+  tts_limit: 'Je hebt de natuurlijke stem vandaag veel gebruikt. Tot morgen hoor je de browserstem.',
+  tts_month: 'Het maandtegoed voor de natuurlijke stem is op. Je hoort nu de browserstem.',
+  tts_key: 'De sleutel voor de natuurlijke stem klopt niet. Je hoort nu de browserstem.',
+  tts_region: 'De regio voor de natuurlijke stem klopt niet. Je hoort nu de browserstem.',
+};
+function ttsFail(e) {
+  const code = (e && e.code) || '';
+  if (code === 'bad_request') { V.ttsOff = code; return; } // functie Ai nog zonder stem: stil de browserstem gebruiken
+  if (TTS_MSG[code]) { V.ttsOff = code; if (code !== 'no_tts' || S.isAdmin) toast(TTS_MSG[code], 7000); }
+}
+function playUrl(url) {
+  return new Promise((resolve, reject) => {
+    const a = V.audio = V.audio || new Audio();
+    const finish = (r) => { a.onended = a.onerror = null; V.endCb = null; r(); };
+    V.endCb = () => finish(resolve);
+    a.onended = () => finish(resolve);
+    a.onerror = () => { a.onended = a.onerror = null; V.endCb = null; reject({ code: 'play' }); };
+    a.src = url;
+    const p = a.play(); if (p && p.catch) p.catch(err => { a.onended = a.onerror = null; V.endCb = null; reject({ code: 'play', err }); });
+  });
+}
+function freeUrls() { V.urls.forEach(u => { try { URL.revokeObjectURL(u); } catch {} }); V.urls = []; }
+async function speakNatural(text, done) {
+  const chunks = ttsChunks(speakable(text)); if (!chunks.length) { if (done) done(); return; }
+  const my = ++V.seq; const voice = S.chat.stem; const rate = S.chat.setupInfo && S.chat.setupInfo.irritant ? 10 : 0;
+  V.speaking = true; updateVoiceUi();
+  const jobs = []; const job = i => jobs[i] || (jobs[i] = ttsFetch(chunks[i], voice, rate));
+  job(0); if (chunks.length > 1) job(1);
+  for (let i = 0; i < chunks.length; i++) {
+    let url;
+    try { url = await job(i); }
+    catch (e) {
+      if (my !== V.seq) return;
+      ttsFail(e); freeUrls();
+      if (e && e.code === 'unauthorized') { V.speaking = false; updateVoiceUi(); if (done) done(); return; }
+      return speakBrowser(chunks.slice(i).join(' '), done);
+    }
+    if (my !== V.seq) return;
+    if (i + 2 < chunks.length) job(i + 2);
+    try { await playUrl(url); }
+    catch (e) { if (my !== V.seq) return; freeUrls(); return speakBrowser(chunks.slice(i).join(' '), done); }
+    if (my !== V.seq || !V.speaking) return;
+  }
+  freeUrls(); V.speaking = false; updateVoiceUi(); if (done) done();
+}
 function speak(text, done) {
-  if (!V.canSpeak || !text) { if (done) done(); return; }
+  if (!text) { if (done) done(); return; }
+  if (useNatural() && CONFIG_OK) return speakNatural(text, done);
+  return speakBrowser(text, done);
+}
+function speakBrowser(text, done) {
+  if (!V.canSpeak || !text) { V.speaking = false; updateVoiceUi(); if (done) done(); return; }
   try { speechSynthesis.cancel(); } catch {}
   const parts = speakable(text).match(/[^.!?]+[.!?]*\s*/g) || [];
   if (!parts.length) { if (done) done(); return; }
@@ -1020,7 +1174,20 @@ function speak(text, done) {
   };
   next();
 }
-function stopSpeaking() { V.speaking = false; try { speechSynthesis.cancel(); } catch {} updateVoiceUi(); }
+function stopSpeaking() {
+  V.speaking = false; V.seq++;
+  try { speechSynthesis.cancel(); } catch {}
+  if (V.audio) { try { V.audio.pause(); } catch {} }
+  if (V.endCb) { const cb = V.endCb; V.endCb = null; cb(); }
+  freeUrls(); updateVoiceUi();
+}
+async function testStem() {
+  unlockSpeech(); stopSpeaking();
+  const naam = (STEMMEN[S.chat.stem] || '').split(' ')[0];
+  const zin = S.chat.stem === 'browser' ? 'Hoi! Dit is de eenvoudige browserstem van je telefoon of computer.' : `Hoi! Ik ben ${naam}. Zo klink ik als je gesprekspartner in Leerpuls. Succes met oefenen!`;
+  if (S.chat.stem !== 'browser') V.ttsOff = '';
+  speak(zin);
+}
 function startListening(auto) {
   if (!V.canListen || V.listening) return;
   stopSpeaking();
@@ -1061,9 +1228,10 @@ function updateVoiceUi() {
 const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
 function voiceControls() {
   const c = S.chat;
-  if (!V.canListen && !V.canSpeak) return '';
   return `<div class="voicebar">
-    ${V.canSpeak ? `<label><input type="checkbox" id="vRead" ${c.read ? 'checked' : ''}> 🔊 Voorlezen</label>` : ''}
+    <label><input type="checkbox" id="vRead" ${c.read ? 'checked' : ''}> 🔊 Voorlezen</label>
+    <label class="stemkeuze">Stem <select id="vStem" aria-label="Stem van je gesprekspartner">${Object.entries(STEMMEN).filter(([k]) => k !== 'browser' || V.canSpeak).map(([k, t]) => `<option value="${k}" ${c.stem === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+    <button class="link small" data-act="teststem" type="button">▶︎ Luister</button>
     ${V.canListen ? `<label><input type="checkbox" id="vHands" ${c.hands ? 'checked' : ''}> 🎙️ Spreekmodus (handsfree)</label>` : ''}
     <span class="speaking" id="speakingNow" ${V.speaking ? '' : 'hidden'}>🔊 Aan het praten… <button class="link small" data-act="stopspeak">Stop</button></span></div>`;
 }
@@ -1212,7 +1380,8 @@ function vAccount() {
     <div>${S.klas.deelt_resultaten ? `<button class="btn ghost" data-act="share" data-v="0">Stop met delen</button>` : `<button class="btn" data-act="share" data-v="1">Deel mijn opdrachtresultaten</button>`}</div></section>` : ''}
   ${S.isDocent ? `<section class="panel"><h3>Docentaccount</h3><p class="small muted">Je beheert ${plural(S.T.klassen.length, 'klas', 'klassen')}. Klassen koppelen gebeurt door de beheerder (${OWNER}).</p></section>` : ''}
   <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label><div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
-  <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw.</p></section>
+  <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw. Voorlezen met de natuurlijke stem telt niet mee.</p></section>
+  ${installPanel('account')}
   <section class="panel"><h3>Privacy</h3><p class="small muted">Je stof, antwoorden en gesprekken zijn alleen voor jou zichtbaar. Beheerders zien alleen aantallen.</p><div class="row"><button class="btn ghost" data-act="export">Download al mijn gegevens</button><button class="btn" data-act="logout">Uitloggen</button></div></section>
   </div></div>`;
 }
@@ -1222,7 +1391,7 @@ let scrollChat = false;
 function render() {
   const root = $('#app'); if (root.hidden) return;
   const keep = {};
-  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'vStem' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
   const act = document.activeElement; const fid = act && root.contains(act) && act.id;
   let ss, se; try { ss = act.selectionStart; se = act.selectionEnd; } catch {}
   const openDetails = [...root.querySelectorAll('details')].map(d => d.open);
@@ -1409,6 +1578,7 @@ async function startChat(cfg) {
   await chatTurn();
 }
 async function sendChat() {
+  unlockSpeech();
   if (V.listening) { V.listening = false; stopListening(); }
   stopSpeaking();
   const el = $('#chatIn'); const t = el && el.value.trim(); if (!t) return;
@@ -1534,7 +1704,7 @@ async function adminFn(body) {
   const j = await res.json().catch(() => ({}));
   if (!res.ok) {
     const hint = { 404: 'Edge Function "Admin" niet gevonden', 401: 'login geweigerd door Supabase: zet Verify JWT uit bij de functie "admin"', 403: 'geen beheerdersrechten' }[res.status];
-    throw { error: j.error || hint || 'HTTP ' + res.status, message: j.message || j.msg || hint || '' };
+    throw { error: j.error || hint || 'HTTP ' + res.status, message: j.message || j.msg || j.answer || hint || '' };
   }
   return j;
 }
@@ -2077,6 +2247,7 @@ document.addEventListener('click', async e => {
   if (a === 'chatsend') { await sendChat(); return; }
   if (a === 'mic') { unlockSpeech(); if (V.listening) { stopListening(); } else startListening(false); return; }
   if (a === 'stopspeak') { stopSpeaking(); return; }
+  if (a === 'teststem') { testStem(); return; }
   if (a === 'chattip') { await chatTip(); return; }
   if (a === 'chatend') { stopSpeaking(); stopListening(); await endChat(); return; }
   if (a === 'chatnew') { stopSpeaking(); stopListening(); Object.assign(S.chat, { phase: 'setup', msgs: [], over: null, geduld: null, opdracht: null }); render(); return; }
@@ -2103,8 +2274,8 @@ document.addEventListener('click', async e => {
   if (a === 'testmail') { await sendTestMail(); return; }
   if (a === 'testwa') {
     setBusy('WhatsApp-test versturen…');
-    try { await adminFn({ action: 'testwhatsapp' }); toast('Testbericht verstuurd. Kijk op je WhatsApp (kan een paar seconden duren).', 7000); }
-    catch (err) { toast(err.error === 'not_configured' ? 'WhatsApp is nog niet ingesteld: voeg WHATSAPP_PHONE en WHATSAPP_APIKEY toe bij de Edge Function-secrets.' : err.error === 'callmebot' ? 'CallMeBot weigerde het bericht. Controleer je telefoonnummer (met +31) en de API-sleutel.' : 'Versturen lukte niet: ' + (err.error || 'fout') + '. Heb je de nieuwe Admin-functie al geplakt?', 9000); }
+    try { const r = await adminFn({ action: 'testwhatsapp' }); toast(`CallMeBot accepteerde het bericht voor ${r.phone || 'je nummer'}. Antwoord: "${r.answer || '–'}". Kijk op je WhatsApp (kan tot een paar minuten duren).`, 12000); }
+    catch (err) { toast(err.error === 'not_configured' ? 'WhatsApp is nog niet ingesteld: voeg WHATSAPP_PHONE en WHATSAPP_APIKEY toe bij de Edge Function-secrets.' : err.error === 'callmebot' ? `CallMeBot weigerde het bericht. Antwoord van CallMeBot: "${err.message || err.answer || '–'}"` : 'Versturen lukte niet: ' + (err.error || 'fout') + '. Heb je de nieuwe Admin-functie al geplakt?', 15000); }
     finally { setBusy(null); }
     return;
   }
@@ -2165,6 +2336,7 @@ document.addEventListener('change', async e => {
   if (t.dataset && t.dataset.linksel) { if (!t.value) return; try { await q(sb.from('klas_docenten').insert({ klas_id: t.dataset.linksel, docent_email: t.value })); await loadAdminKlassen(); await loadKlasData(); toast('Docent gekoppeld aan de klas.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.klasof) { try { await q(sb.from('accounts').update({ klas_id: t.value || null }).eq('email', t.dataset.klasof)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.klasof); if (r) r.klas_id = t.value || null; await loadAdminKlassen(); toast(t.value ? `In klas ${klasNaam(t.value)} gezet.` : 'Uit de klas gehaald.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.rolesel) { try { await q(sb.from('accounts').update({ role: t.value }).eq('email', t.dataset.rolesel)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.rolesel); if (r) r.role = t.value; toast('Rol aangepast.'); render(); } catch (err) { dbErr(err); toast('Rol aanpassen lukte niet. Is docenten.sql al gedraaid?', 7000); } return; }
+  if (t.id === 'vStem') { S.chat.stem = t.value; V.ttsOff = ''; stopSpeaking(); savePrefs(); testStem(); return; }
   if (t.id === 'vRead') { S.chat.read = t.checked; if (!t.checked) stopSpeaking(); else unlockSpeech(); savePrefs(); return; }
   if (t.id === 'vHands') { S.chat.hands = t.checked; if (t.checked) { S.chat.read = true; unlockSpeech(); } else stopListening(); savePrefs(); render(); return; }
   if (t.dataset && t.dataset.move) {

@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "Leerpuls",
+  "short_name": "Leerpuls",
+  "description": "Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg met AI.",
+  "lang": "nl",
+  "start_url": "/?bron=app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F6FA",
+  "theme_color": "#161D36",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
