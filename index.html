@@ -334,7 +334,9 @@ async function q(p) { const { data, error } = await p; if (error) throw error; r
 
 /* ================= state ================= */
 const S = {
-  tab: 'vandaag', user: null, account: null, isAdmin: false,
+  tab: 'vandaag', user: null, account: null, isAdmin: false, isDocent: false,
+  klas: null, kdocs: [], opdr: [], myRes: [], klasErr: false,
+  T: { klassen: [], sel: null, sub: 'opdrachten', leerlingen: {}, res: {}, openOpd: null, pick: new Set(), vak: '', form: { type: 'toets', n: 10, soort: 'mix', niveau: 'toets', scenario: 'verkoop', toon: 'neutraal', lengte: 'normaal' } },
   vakken: [], docs: [], texts: {}, decks: [], results: [], sessions: [], exams: [], days: new Set(),
   ai: { used: 0, limit: 0, unlimited: false },
   sel: { quiz: new Set(), cards: new Set(), chat: new Set(), qa: new Set() },
@@ -370,10 +372,11 @@ function renderGate() {
     <div class="reqcta"><span class="small muted">Nog geen account?</span><button class="btn ${g.noAccount ? 'hl' : 'ghost'} wide" data-gate="request">Toegang aanvragen</button></div>`;
   if (g.step === 'request') body = `<h2>Toegang aanvragen</h2><p class="muted small">Vul je gegevens in. Je krijgt een mail zodra je aanvraag is goedgekeurd; daarna log je in met een code.</p>
     <form id="fRequest" class="stack" novalidate>
+      <div class="field"><span>Ik ben</span><div class="seg" role="group"><button type="button" data-gate="rqtype" data-v="student" aria-pressed="${(g.rq.type || 'student') === 'student'}">Student</button><button type="button" data-gate="rqtype" data-v="docent" aria-pressed="${g.rq.type === 'docent'}">Docent</button></div></div>
       <label class="field"><span>Voor- en achternaam</span><input id="rqName" autocomplete="name" required maxlength="80" value="${esc(g.rq.name || '')}"></label>
       <label class="field"><span>E-mailadres</span><input id="rqEmail" type="email" autocomplete="email" required value="${esc(g.rq.email || g.email || '')}"></label>
-      <label class="field"><span>Opleiding en school</span><input id="rqOpl" maxlength="120" placeholder="bijv. Commerciële Economie, Hogeschool Leiden" value="${esc(g.rq.opleiding || '')}"></label>
-      <label class="field"><span>Klas of groep (optioneel)</span><input id="rqGroep" maxlength="60" placeholder="bijv. CE1A" value="${esc(g.rq.groep || '')}"></label>
+      <label class="field"><span>${g.rq.type === 'docent' ? 'School en vakken die je geeft' : 'Opleiding en school'}</span><input id="rqOpl" maxlength="120" placeholder="${g.rq.type === 'docent' ? 'bijv. Hogeschool Leiden – Marketing en Verkoop' : 'bijv. Commerciële Economie, Hogeschool Leiden'}" value="${esc(g.rq.opleiding || '')}"></label>
+      <label class="field"><span>${g.rq.type === 'docent' ? 'Klassen waaraan je lesgeeft (optioneel)' : 'Klas of groep (optioneel)'}</span><input id="rqGroep" maxlength="60" placeholder="${g.rq.type === 'docent' ? 'bijv. CE1A, CE1B' : 'bijv. CE1A'}" value="${esc(g.rq.groep || '')}"></label>
       <label class="field"><span>Waarvoor wil je Leerpuls gebruiken? (optioneel)</span><textarea id="rqMot" maxlength="1000" placeholder="bijv. oefenen voor mijn tentamens en verkoopgesprekken">${esc(g.rq.motivatie || '')}</textarea></label>
       <div class="hp" aria-hidden="true"><label>Website<input id="rqSite" tabindex="-1" autocomplete="off"></label></div>
       <label class="check"><input type="checkbox" id="rqOk" ${g.rq.akkoord ? 'checked' : ''}><span>Ik ga akkoord dat Leerpuls mijn naam en e-mailadres bewaart om mijn aanvraag te behandelen.</span></label>
@@ -415,7 +418,7 @@ document.addEventListener('submit', async e => {
   e.preventDefault();
   if (f.id === 'fEmail') { const email = $('#gEmail').value.trim().toLowerCase(); G.email = email; G.noAccount = false; await sendCode(email); }
   if (f.id === 'fRequest') {
-    const rq = { name: $('#rqName').value.trim(), email: $('#rqEmail').value.trim().toLowerCase(), opleiding: $('#rqOpl').value.trim(), groep: $('#rqGroep').value.trim(), motivatie: $('#rqMot').value.trim(), akkoord: $('#rqOk').checked, website: $('#rqSite').value };
+    const rq = { name: $('#rqName').value.trim(), email: $('#rqEmail').value.trim().toLowerCase(), opleiding: $('#rqOpl').value.trim(), groep: $('#rqGroep').value.trim(), motivatie: $('#rqMot').value.trim(), akkoord: $('#rqOk').checked, website: $('#rqSite').value, type: G.rq.type === 'docent' ? 'docent' : 'student' };
     G.rq = rq;
     if (rq.name.length < 2) { G.err = 'Vul je voor- en achternaam in.'; renderGate(); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rq.email)) { G.err = 'Vul een geldig e-mailadres in.'; renderGate(); return; }
@@ -463,6 +466,7 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-gate]'); if (!b) return;
   const a = b.dataset.gate;
   if (a === 'password') showGate('password');
+  if (a === 'rqtype') { const keep = { name: $('#rqName').value, email: $('#rqEmail').value, opleiding: $('#rqOpl').value, groep: $('#rqGroep').value, motivatie: $('#rqMot').value, akkoord: $('#rqOk').checked }; G.rq = { ...G.rq, ...keep, type: b.dataset.v }; renderGate(); return; }
   if (a === 'request') { if (sb) { const { data: { session } } = await sb.auth.getSession(); if (session) { G.rq = { ...G.rq, email: session.user.email }; await sb.auth.signOut(); } } showGate('request'); }
   if (a === 'email') showGate('email');
   if (a === 'resend') { if (Date.now() < G.resendAt) { G.err = `Wacht nog ${Math.ceil((G.resendAt - Date.now()) / 1000)} seconden voor een nieuwe code.`; renderGate(); return; } await sendCode(G.email); G.msg = 'Nieuwe code verstuurd.'; renderGate(); }
@@ -480,7 +484,7 @@ async function start(viaCode) {
   const { data: acc, error } = await sb.rpc('link_account');
   if (error || !acc || !acc.email) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Dit e-mailadres heeft (nog) geen Leerpuls-account.', canRequest: true }); return; }
   if (!acc.active) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Je account is gepauzeerd door de beheerder.' }); return; }
-  S.account = acc; S.isAdmin = acc.email === OWNER || acc.role === 'admin';
+  S.account = acc; S.isAdmin = acc.email === OWNER || acc.role === 'admin'; S.isDocent = acc.role === 'docent';
   let skip = false; try { skip = sessionStorage.getItem('lp_skip_pw') === '1'; } catch {}
   if (viaCode && !(S.user.user_metadata || {}).password_set && !skip) { showGate('setpw'); return; }
   showApp();
@@ -506,6 +510,7 @@ async function loadAll() {
     ]);
     Object.assign(S, { vakken, docs, decks, results, sessions, exams, days: new Set(days.map(d => d.day)) });
     await refreshAi();
+    await loadKlasData();
   } catch (e) { console.error(e); toast('Laden lukte niet. Ververs de pagina.', 7000); }
   finally { S.busy = null; }
 }
@@ -522,13 +527,15 @@ function streak() {
 }
 async function ensureTexts(ids) {
   const miss = ids.filter(i => S.texts[i] == null);
-  if (miss.length) { const rows = await q(sb.from('documents').select('id,text').in('id', miss)); rows.forEach(r => S.texts[r.id] = r.text || ''); }
+  const own = miss.filter(i => S.docs.some(d => d.id === i)), kl = miss.filter(i => S.kdocs.some(d => d.id === i));
+  if (own.length) { const rows = await q(sb.from('documents').select('id,text').in('id', own)); rows.forEach(r => S.texts[r.id] = r.text || ''); }
+  if (kl.length) { const rows = await q(sb.from('klas_docs').select('id,text').in('id', kl)); rows.forEach(r => S.texts[r.id] = r.text || ''); }
 }
 async function material(ids, max = 70000) {
   await ensureTexts(ids);
-  const ds = S.docs.filter(d => ids.includes(d.id));
+  const ds = allDocs().filter(d => ids.includes(d.id));
   const per = Math.floor(max / Math.max(1, ds.length));
-  return ds.map(d => `### ${d.title} (${vakNaam(d.vak_id)})\n${(S.texts[d.id] || '').slice(0, per)}`).join('\n\n');
+  return ds.map(d => `### ${d.title} (${d.klas_id ? d.vak + ', lesstof van de docent' : vakNaam(d.vak_id)})\n${(S.texts[d.id] || '').slice(0, per)}`).join('\n\n');
 }
 const vak = id => S.vakken.find(v => v.id === id);
 const vakNaam = id => (vak(id) || {}).naam || 'Zonder vak';
@@ -756,7 +763,7 @@ async function handleFiles(files, vakId, title) {
 
 /* ================= weergaven ================= */
 function tabs() {
-  const t = [['vandaag', 'Vandaag'], ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
+  const t = [['vandaag', 'Vandaag'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
   if (S.isAdmin) t.push(['beheer', 'Beheer', pendingReqs().length]);
   t.push(['account', 'Account']);
   return t;
@@ -770,16 +777,19 @@ function view() {
   h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
   <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
   h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && pendingReqs().length ? `<span class="badge" aria-label="nieuwe aanvragen">${pendingReqs().length}</span>` : ''}</button>`).join('')}</nav>`;
-  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, account: vAccount })[S.tab]();
+  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, account: vAccount })[S.tab]();
   return h;
 }
 function picker(key, hint) {
-  if (!S.docs.length) return `<div class="notice">Je hebt nog geen stof. <button class="link" data-act="tab" data-tab="vakken">Voeg eerst documenten toe aan een vak</button>.</div>`;
+  const kd = myKlasDocs();
+  if (!S.docs.length && !kd.length) return `<div class="notice">Je hebt nog geen stof. <button class="link" data-act="tab" data-tab="vakken">Voeg eerst documenten toe aan een vak</button>.</div>`;
   const sel = S.sel[key]; const groups = {};
+  const kgroups = {}; kd.forEach(d => (kgroups[d.vak] = kgroups[d.vak] || []).push(d));
+  const kHtml = Object.keys(kgroups).sort().map(v => `<div class="row" style="align-items:flex-start"><span class="small row" style="gap:6px;min-width:120px;font-weight:700;color:var(--pen)">📚 ${esc(v)}</span><div class="chips" style="flex:1">${kgroups[v].map(d => `<button class="chip" data-act="pick" data-key="${key}" data-id="${d.id}" aria-pressed="${sel.has(d.id)}" title="Van je docent: ${esc(d.title)}">${esc(d.title)}</button>`).join('')}</div></div>`).join('');
   for (const d of S.docs) (groups[d.vak_id || ''] = groups[d.vak_id || ''] || []).push(d);
   const order = Object.keys(groups).sort((a, b) => vakNaam(a || null).localeCompare(vakNaam(b || null)));
   return `<div class="picker"><div class="row between"><span class="label">${hint || 'Kies je stof'}</span><span class="small muted">${sel.size ? plural(sel.size, 'document', 'documenten') + ' gekozen' : ''}</span></div>
-  ${order.map(v => `<div class="row" style="align-items:flex-start"><button class="link small row" style="gap:6px;min-width:120px;text-align:left;text-decoration:none" data-act="pickvak" data-key="${key}" data-vak="${v}"><span class="vakdot" style="--vc:${vakColor(v || null)}"></span>${esc(vakNaam(v || null))}</button><div class="chips" style="flex:1">${groups[v].map(d => `<button class="chip" data-act="pick" data-key="${key}" data-id="${d.id}" aria-pressed="${sel.has(d.id)}" title="${esc(d.title)}">${esc(d.title)}</button>`).join('')}</div></div>`).join('')}</div>`;
+  ${order.map(v => `<div class="row" style="align-items:flex-start"><button class="link small row" style="gap:6px;min-width:120px;text-align:left;text-decoration:none" data-act="pickvak" data-key="${key}" data-vak="${v}"><span class="vakdot" style="--vc:${vakColor(v || null)}"></span>${esc(vakNaam(v || null))}</button><div class="chips" style="flex:1">${groups[v].map(d => `<button class="chip" data-act="pick" data-key="${key}" data-id="${d.id}" aria-pressed="${sel.has(d.id)}" title="${esc(d.title)}">${esc(d.title)}</button>`).join('')}</div></div>`).join('')}${kHtml}</div>`;
 }
 const seg = (group, val, opts) => `<div class="seg" role="group">${opts.map(([k, l]) => `<button data-act="seg" data-group="${group}" data-val="${k}" aria-pressed="${String(val) === String(k)}">${l}</button>`).join('')}</div>`;
 const vakOptions = (sel, withNone = true) => `${withNone ? `<option value="">Zonder vak</option>` : ''}${S.vakken.map(v => `<option value="${v.id}" ${sel === v.id ? 'selected' : ''}>${esc(v.naam)}</option>`).join('')}`;
@@ -810,6 +820,8 @@ function vVandaag() {
       <div><button class="btn" data-act="tab" data-tab="vakken">Eerste vak aanmaken</button></div></section>`;
   }
   if (S.isAdmin && pendingReqs().length) h += `<div class="notice row between"><span><b>${plural(pendingReqs().length, 'nieuwe aanvraag', 'nieuwe aanvragen')}</b> voor Leerpuls.</span><button class="btn sm" data-act="tab" data-tab="beheer">Bekijk</button></div>`;
+  h += consentCard() + opdrPanelStudent();
+  if (isTeacher() && S.T.klassen.length) h += `<section class="panel"><div class="row between"><h3>Je klassen</h3><button class="btn sm" data-act="tab" data-tab="klassen">Naar Klassen</button></div><div class="list">${S.T.klassen.map(k => { const ops = S.opdr.filter(o => o.klas_id === k.id); const open = ops.filter(o => !o.deadline || o.deadline >= todayStr()).length; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}</span><span class="small muted">${plural(open, 'lopende opdracht', 'lopende opdrachten')} · ${S.kdocs.filter(d => d.klas_id === k.id).length} lesstof</span></div><button class="btn sm ghost" data-act="klassel" data-id="${k.id}" data-go="1">Open</button></div>`; }).join('')}</div></section>`;
   if (S.vakken.length || S.photos.length) h += photoPanel(null, { withVak: true, mobileOnly: true, heading: "Snel foto's toevoegen" });
   h += `<div class="grid2">`;
   if (tasks.length) h += `<section class="panel"><h3>Vandaag op je leerplan</h3><div class="plan">${tasks.map(({ e, t, i }) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span style="flex:1;display:grid;gap:2px"><span class="tt">${esc(t.taak)}</span><span class="small muted">${esc(e.naam)} · ${esc(vakNaam(e.vak_id))}${t.datum < today ? ' · ingehaald van ' + fmtDay(t.datum) : ''}</span></span></button>`).join('')}</div></section>`;
@@ -851,6 +863,7 @@ function vVakken() {
   const loose = S.docs.filter(d => !d.vak_id).length;
   if (loose) cards.push(`<button class="vakcard" data-act="vakopen" data-id="" style="--vc:var(--line)"><b>Zonder vak</b><span class="small muted">${plural(loose, 'document', 'documenten')}</span></button>`);
   h += cards.length ? `<div class="vakgrid">${cards.join('')}</div>` : `<section class="panel"><p class="muted">Nog geen vakken. Maak hierboven je eerste vak aan, daarna voeg je per vak je documenten toe.</p></section>`;
+  h += klasDocsSection();
   return h + `</div>`;
 }
 function vVak(id) {
@@ -883,7 +896,7 @@ function vToets() {
   const qz = S.quiz;
   if (qz.phase === 'run') {
     const cur = qz.qs[qz.i]; const a = qz.answers[qz.i];
-    let h = `<div class="stack"><div class="row between"><h2>${esc(qz.title)}</h2><button class="btn sm ghost" data-act="quizstop">Stoppen</button></div>
+    let h = `<div class="stack"><div class="row between"><h2>${esc(qz.title)}</h2><button class="btn sm ghost" data-act="quizstop">Stoppen</button></div>${opdrBanner(S.opdr.find(o => o.id === qz.opdracht))}
     <section class="panel"><div class="row between"><span class="label">Vraag ${qz.i + 1} van ${qz.qs.length}</span><span class="pill">${esc(cur.topic || '')}</span></div><div class="bar"><i style="width:${(qz.i / qz.qs.length) * 100}%"></i></div><p class="q">${esc(cur.question)}</p>`;
     if (cur.type === 'mc') {
       h += `<div class="opts">${cur.options.map((o, k) => { let c = ''; if (a != null) { if (k === cur.answer) c = 'right'; else if (k === a) c = 'wrong'; } return `<button class="opt ${c}" data-act="mc" data-k="${k}" ${a != null ? 'disabled' : ''}><span class="k">${'ABCDEF'[k]}</span><span>${esc(o)}</span></button>`; }).join('')}</div>`;
@@ -895,7 +908,7 @@ function vToets() {
   }
   if (qz.phase === 'done') {
     const c = qz.cijfer;
-    let h = `<div class="stack"><h2>${esc(qz.title)}</h2><section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(c)}">${fmtCijfer(c)}</span><div class="stack" style="gap:4px"><b>${c >= 5.5 ? 'Voldoende' : 'Onvoldoende'}</b><span class="muted mono small">${String(qz.pts).replace('.', ',')} van ${qz.qs.length} punten</span></div></div>
+    let h = `<div class="stack"><h2>${esc(qz.title)}</h2>${opdrBanner(S.opdr.find(o => o.id === qz.opdracht))}<section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(c)}">${fmtCijfer(c)}</span><div class="stack" style="gap:4px"><b>${c >= 5.5 ? 'Voldoende' : 'Onvoldoende'}</b><span class="muted mono small">${String(qz.pts).replace('.', ',')} van ${qz.qs.length} punten</span></div></div>
     ${qz.weak.length ? `<div class="row"><span class="small">Extra aandacht:</span>${qz.weak.map(t => `<span class="pill warn">${esc(t)}</span>`).join('')}</div>` : ''}
     <div class="row"><button class="btn" data-act="quiznew">Nieuwe toets</button>${qz.weak.length ? `<button class="btn ghost" data-act="quizweak">Oefen zwakke onderwerpen</button>` : ''}${qz.wrong.length ? `<button class="btn ghost" data-act="quizcards">Maak flashcards van je fouten</button>` : ''}</div></section>
     <section class="panel"><h3>Nakijken</h3><div class="stack">${qz.qs.map((x, k) => { const g = qz.grades[k];
@@ -1044,7 +1057,7 @@ function moodBar(c) {
 function vGesprek() {
   const c = S.chat;
   if (c.phase === 'run' || c.phase === 'feedback') {
-    let h = `<div class="stack"><div class="row between"><h2>${esc(c.title)}</h2><button class="btn sm ghost" data-act="chatnew">Nieuw gesprek</button></div><section class="panel">${moodBar(c)}<div class="chat" id="chatBox">`;
+    let h = `<div class="stack"><div class="row between"><h2>${esc(c.title)}</h2><button class="btn sm ghost" data-act="chatnew">Nieuw gesprek</button></div>${opdrBanner(S.opdr.find(o => o.id === c.opdracht))}<section class="panel">${moodBar(c)}<div class="chat" id="chatBox">`;
     c.msgs.forEach((m, k) => {
       if (k === 0 && m.role === 'user') return;
       h += `<div class="msg ${m.role === 'assistant' ? 'ai' : 'me'}"><div class="who-l">${m.role === 'assistant' ? esc(c.rol) : 'Jij'}</div>${esc(m.role === 'assistant' ? cleanTags(m.content) : m.content)}</div>`;
@@ -1111,10 +1124,13 @@ function reqSection() {
   let h = `<section class="panel"><div class="row between"><h3>Aanvragen</h3><span class="label">${open.length ? plural(open.length, 'nieuwe', 'nieuwe') : 'geen nieuwe'}</span></div>`;
   if (!open.length) h += `<p class="small muted">Geen openstaande aanvragen. Nieuwe aanvragen komen binnen via de knop "Toegang aanvragen" op het inlogscherm, en je krijgt er een mail van.</p>`;
   else h += `<div>${open.map(r => { const conf = S.confirm === 'rej:' + r.id;
-    return `<div class="req"><div class="row between"><b>${esc(r.name)}</b><span class="small muted">${fmtDate(r.created_at)}</span></div>
+    const isDoc = r.type === 'docent'; const ks = A.klassen || [];
+    const guess = (ks.find(k => r.groep && k.naam.toLowerCase() === r.groep.toLowerCase()) || {}).id || '';
+    return `<div class="req"><div class="row between"><b>${esc(r.name)} ${isDoc ? '<span class="pill warn">Docent</span>' : '<span class="pill">Student</span>'}</b><span class="small muted">${fmtDate(r.created_at)}</span></div>
       <span class="small mono">${esc(r.email)}</span>
       ${r.opleiding || r.groep ? `<span class="small muted">${esc([r.opleiding, r.groep].filter(Boolean).join(' · '))}</span>` : ''}
       ${r.motivatie ? `<div class="quote">${esc(r.motivatie)}</div>` : ''}
+      ${ks.length && !conf ? (isDoc ? `<div class="stack" style="gap:4px"><span class="small"><b>Koppel aan klassen</b> (kan ook later bij Klassen)</span><div class="chips">${ks.map(k => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" data-reqklas="${r.id}" value="${k.id}" ${r.groep && r.groep.toLowerCase().includes(k.naam.toLowerCase()) ? 'checked' : ''}>${esc(k.naam)}</label>`).join('')}</div></div>` : `<label class="field"><span>Zet in klas</span>${klasSelect('reqKlas-' + r.id, guess)}</label>`) : ''}
       <div class="row">${conf ? `<span class="small">Afwijzen?</span><button class="btn sm danger" data-act="reqreject" data-id="${r.id}" data-mail="1">Afwijzen en mail sturen</button><button class="btn sm ghost" data-act="reqreject" data-id="${r.id}">Afwijzen zonder mail</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>`
         : `<button class="btn sm hl" data-act="reqapprove" data-id="${r.id}" ${S.busy ? 'disabled' : ''}>Goedkeuren</button><button class="btn sm ghost" data-act="confirm" data-key="rej:${r.id}">Afwijzen</button>`}</div></div>`; }).join('')}</div>`;
   if (done.length) h += `<details><summary class="link small" style="cursor:pointer">Eerder behandeld (${done.length})</summary><div class="list" style="margin-top:8px">${done.map(r => `<div class="item"><div class="main"><span class="t">${esc(r.name)}</span><span class="small muted mono">${esc(r.email)}</span></div><span class="pill ${r.status === 'goedgekeurd' ? 'good' : 'bad'}">${r.status}</span><span class="small muted">${r.handled_at ? fmtDate(r.handled_at) : ''}</span></div>`).join('')}</div></details>`;
@@ -1136,23 +1152,25 @@ function vBeheer() {
     <div class="stack" style="gap:2px"><span class="label">AI-acties 7 dagen</span><span class="cijfer" style="font-size:2rem">${week}</span></div></div>
     <p class="small muted">Je ziet alleen aantallen per student, nooit hun documenten, antwoorden of gesprekken.</p></section>
   ${reqSection()}
+  ${klassenSection()}
   <section class="panel"><div class="row between"><h3>Account toevoegen</h3><button class="link small" data-act="adminbulk">${A.bulk ? 'Eén account toevoegen' : 'Meerdere tegelijk toevoegen'}</button></div>
   ${A.bulk ? `<label class="field"><span>Eén per regel: e-mailadres, of naam;e-mailadres</span><textarea id="adBulk" placeholder="Sanne de Vries;sanne@student.nl&#10;tim@student.nl"></textarea></label>`
     : `<div class="fields"><label class="field"><span>E-mailadres</span><input id="adEmail" type="email" placeholder="naam@student.nl"></label><label class="field"><span>Naam</span><input id="adName" placeholder="Voor- en achternaam"></label></div>`}
-  <div class="fields"><div class="field"><span>Rol</span>${seg('admin.newRole', A.newRole, [['student', 'Student'], ['admin', 'Beheerder']])}</div>
-  <label class="field"><span>Groep of klas (optioneel)</span><input id="adGroep" placeholder="bijv. CE1A"></label>
+  <div class="fields"><div class="field"><span>Rol</span>${seg('admin.newRole', A.newRole, [['student', 'Student'], ['docent', 'Docent'], ['admin', 'Beheerder']])}</div>
+  ${A.newRole === 'student' && (A.klassen || []).length ? `<label class="field"><span>Klas</span>${klasSelect('adKlas', A.lastKlas || '')}</label>` : ''}
+  <label class="field"><span>Groep of klas (vrije tekst, optioneel)</span><input id="adGroep" placeholder="bijv. CE1A"></label>
   <label class="field"><span>AI-acties per dag</span><input id="adLimit" type="number" min="0" max="10000" value="60"></label></div>
   <label class="row small" style="gap:8px"><input type="checkbox" id="adMail" checked> Stuur een welkomstmail met uitleg hoe je inlogt</label>
   <div><button class="btn" data-act="admincreate" ${S.busy ? 'disabled' : ''}>${A.bulk ? 'Accounts toevoegen' : 'Account toevoegen'}</button></div></section>
   <section class="panel"><div class="row between"><h3>Accounts</h3><input id="adFilter" placeholder="Zoek op naam, e-mail of groep" style="max-width:280px" value="${esc(A.filter || '')}" data-filter="1"></div>
-  <div class="tablewrap"><table><thead><tr><th>Naam</th><th>Rol</th><th>Groep</th><th>Status</th><th>Laatst actief</th><th>Docs</th><th>Gem. cijfer</th><th>AI vandaag</th><th>Limiet</th><th></th></tr></thead><tbody>
+  <div class="tablewrap"><table><thead><tr><th>Naam</th><th>Rol</th><th>Klas</th><th>Status</th><th>Laatst actief</th><th>Docs</th><th>Gem. cijfer</th><th>AI vandaag</th><th>Limiet</th><th></th></tr></thead><tbody>
   ${shown.map(r => { const own = r.email === OWNER; const conf = S.confirm === 'acc:' + r.email;
-    return `<tr><td><b>${esc(r.name || '—')}</b><br><span class="small muted mono">${esc(r.email)}</span></td><td>${r.role === 'admin' ? (own ? 'Hoofdbeheerder' : 'Beheerder') : 'Student'}</td><td>${esc(r.groep || '')}</td>
+    return `<tr><td><b>${esc(r.name || '—')}</b><br><span class="small muted mono">${esc(r.email)}</span></td><td>${own ? 'Hoofdbeheerder' : `<select data-rolesel="${esc(r.email)}" style="width:auto" aria-label="Rol ${esc(r.email)}">${[['student', 'Student'], ['docent', 'Docent'], ['admin', 'Beheerder']].map(([k, l]) => `<option value="${k}" ${r.role === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td><td>${r.role === 'student' && !S.admin.klasErr ? klasSelect('', r.klas_id || '', `data-klasof="${esc(r.email)}" style="width:auto" aria-label="Klas ${esc(r.email)}"`) : esc(r.groep || '')}</td>
     <td>${r.active ? `<span class="pill good">actief</span>` : `<span class="pill bad">gepauzeerd</span>`}${!r.last_login ? ` <span class="pill">nooit ingelogd</span>` : ''}</td>
     <td class="small">${r.laatst_actief ? fmtDay(r.laatst_actief) : (r.last_login ? fmtDate(r.last_login) : '—')}</td><td class="num">${r.docs}</td><td class="num">${r.gem_cijfer != null ? fmtCijfer(r.gem_cijfer) : '—'}</td><td class="num">${r.ai_vandaag}</td>
     <td><input type="number" min="0" max="10000" value="${r.daily_ai_limit}" style="width:80px" data-limit="${esc(r.email)}" aria-label="AI-limiet ${esc(r.email)}"></td>
     <td style="white-space:nowrap">${own ? '' : conf ? `<button class="btn sm danger" data-act="admindel" data-email="${esc(r.email)}">Definitief verwijderen</button> <button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
-      `<button class="btn sm ghost" data-act="admintoggle" data-email="${esc(r.email)}">${r.active ? 'Pauzeer' : 'Activeer'}</button> <button class="btn sm ghost" data-act="adminrole" data-email="${esc(r.email)}">${r.role === 'admin' ? 'Maak student' : 'Maak beheerder'}</button> <button class="link small" data-act="confirm" data-key="acc:${esc(r.email)}">Verwijder</button>`}</td></tr>`; }).join('')}
+      `<button class="btn sm ghost" data-act="admintoggle" data-email="${esc(r.email)}">${r.active ? 'Pauzeer' : 'Activeer'}</button> <button class="link small" data-act="confirm" data-key="acc:${esc(r.email)}">Verwijder</button>`}</td></tr>`; }).join('')}
   </tbody></table></div><p class="small muted">Verwijderen wist ook alle stof, flashcards en resultaten van die student. Pauzeren blokkeert inloggen en AI, maar bewaart alles.</p></section></div>`;
 }
 
@@ -1163,6 +1181,11 @@ function vAccount() {
   <section class="panel"><h3>Je gegevens</h3><label class="field"><span>Naam</span><input id="acName" value="${esc(a.name || '')}" maxlength="80"></label><p class="small muted">E-mailadres: <span class="mono">${esc(a.email)}</span>${a.groep ? ` · Groep: ${esc(a.groep)}` : ''}</p><div><button class="btn ghost" data-act="acname">Naam opslaan</button></div></section>
   <section class="panel"><h3>${pwSet ? 'Wachtwoord wijzigen' : 'Wachtwoord instellen'}</h3><p class="small muted">${pwSet ? 'Je kunt inloggen met je wachtwoord of met een code per mail.' : 'Je logt nu in met een code per mail. Met een wachtwoord gaat het sneller.'}</p>
   <form id="fAcctPw" class="stack"><label class="field"><span>Nieuw wachtwoord (minimaal 8 tekens)</span><input id="acPw" type="password" autocomplete="new-password" minlength="8" required></label><label class="field"><span>Herhaal wachtwoord</span><input id="acPw2" type="password" autocomplete="new-password" minlength="8" required></label><div><button class="btn">Opslaan</button></div></form></section>
+  ${S.klas ? `<section class="panel"><h3>Klas ${esc(S.klas.naam)}</h3><p class="small muted">${S.klas.school ? esc(S.klas.school) + ' · ' : ''}${(S.klas.docenten || []).length ? 'Docent: ' + esc(S.klas.docenten.join(', ')) : 'Nog geen docent gekoppeld'}</p>
+    <p>Je docent ziet de resultaten van zijn of haar opdrachten: <b>${S.klas.deelt_resultaten ? 'ja' : 'nee'}</b></p>
+    <p class="small muted">Alleen het cijfer en de uitkomst van opdrachten die je docent klaarzet. Je eigen stof, flashcards en oefeningen blijven altijd privé.</p>
+    <div>${S.klas.deelt_resultaten ? `<button class="btn ghost" data-act="share" data-v="0">Stop met delen</button>` : `<button class="btn" data-act="share" data-v="1">Deel mijn opdrachtresultaten</button>`}</div></section>` : ''}
+  ${S.isDocent ? `<section class="panel"><h3>Docentaccount</h3><p class="small muted">Je beheert ${plural(S.T.klassen.length, 'klas', 'klassen')}. Klassen koppelen gebeurt door de beheerder (${OWNER}).</p></section>` : ''}
   <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw.</p></section>
   <section class="panel"><h3>Privacy</h3><p class="small muted">Je stof, antwoorden en gesprekken zijn alleen voor jou zichtbaar. Beheerders zien alleen aantallen.</p><div class="row"><button class="btn ghost" data-act="export">Download al mijn gegevens</button><button class="btn" data-act="logout">Uitloggen</button></div></section>
   </div></div>`;
@@ -1182,7 +1205,7 @@ function render() {
   root.querySelectorAll('details').forEach((d, i) => { if (openDetails[i]) d.open = true; });
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); try { if (ss != null) el.setSelectionRange(ss, se); } catch {} } }
   const box = $('#chatBox'); if (box && scrollChat) box.scrollTop = box.scrollHeight;
-  bindDrop();
+  bindDrop(); bindKlasDrop();
 }
 function bindDrop() {
   const d = $('#drop'); if (!d || d.dataset.b) return; d.dataset.b = 1;
@@ -1243,6 +1266,7 @@ ${toGrade.map((o, i) => `${i + 1}. Vraag: ${o.x.question}\nModelantwoord: ${o.x.
   Object.assign(qz, { phase: 'done', grades, pts, cijfer, weak, wrong });
   render(); markStudy();
   try { const row = await q(sb.from('results').insert({ kind: 'toets', vak_id: qz.vakId, title: qz.title, pts, total: qz.qs.length, cijfer, weak }).select().single()); S.results.unshift(row); } catch (e) { dbErr(e); }
+  if (qz.opdracht) await saveOpdrResult({ opdracht_id: qz.opdracht, cijfer, pts, total: qz.qs.length, uitkomst: '' });
 }
 
 /* ================= flashcards ================= */
@@ -1284,19 +1308,19 @@ function answerCard(known) {
 }
 
 /* ================= gesprek ================= */
-function chatSetup() {
+function chatSetup(cfg) {
   const c = S.chat;
   const toon = { vriendelijk: 'vriendelijk en geruststellend, maar wel inhoudelijk', neutraal: 'zakelijk en neutraal', streng: 'kritisch: vraag door op vage antwoorden en laat zwakke plekken niet liggen', irritant: 'irritant en heel moeilijk (zie de regels voor het moeilijkste niveau hieronder)' }[c.toon];
   const aantal = { kort: 4, normaal: 7, lang: 11 }[c.lengte];
-  const v = id => ($('#' + id) && $('#' + id).value.trim()) || '';
-  const ids = [...S.sel.chat]; let rol = '', role = '', title = '', stofMax = 0;
+  const v = id => cfg ? String(cfg[id] || '').trim() : (($('#' + id) && $('#' + id).value.trim()) || '');
+  const ids = cfg ? (cfg.ids || []) : [...S.sel.chat]; let rol = '', role = '', title = '', stofMax = 0;
   if (c.scenario === 'verkoop') {
     const prod = v('chProduct') || 'een product of dienst naar keuze van de student'; const klant = v('chKlant'); const prijs = v('chPrijs');
     rol = 'Klant'; title = 'Verkoop: ' + (v('chProduct') || 'verkoopgesprek');
     role = `Je bent een potentiële klant${klant ? ` (${klant})` : ''} in een verkoopgesprek. De student is de verkoper en probeert je ${prod} te verkopen${prijs ? `; de prijs is ${prijs}` : ''}. Jij bent de koper: je hebt een eigen situatie, budget en twijfels (bedenk die zelf, realistisch en concreet). Laat de verkoper het gesprek leiden: jij stelt vooral vragen, geeft bezwaren en reageert op wat hij zegt. Je stemt pas in als je echt overtuigd bent: als de verkoper je behoefte heeft onderzocht, je bezwaren serieus en concreet heeft beantwoord en om de koop of een vervolgafspraak vraagt.`;
     stofMax = ids.length ? 20000 : 0;
   }
-  if (c.scenario === 'mondeling') { rol = 'Examinator'; title = 'Mondeling: ' + S.docs.filter(d => ids.includes(d.id)).map(d => d.title).slice(0, 2).join(', '); role = 'Je bent examinator bij een mondeling tentamen in het hbo. Je toetst of de student de studiestof begrijpt en kan toepassen. Stel open vragen over de stof, vraag naar voorbeelden en toepassingen, en vraag door als een antwoord oppervlakkig is.'; stofMax = 50000; }
+  if (c.scenario === 'mondeling') { rol = 'Examinator'; title = 'Mondeling: ' + allDocs().filter(d => ids.includes(d.id)).map(d => d.title).slice(0, 2).join(', '); role = 'Je bent examinator bij een mondeling tentamen in het hbo. Je toetst of de student de studiestof begrijpt en kan toepassen. Stel open vragen over de stof, vraag naar voorbeelden en toepassingen, en vraag door als een antwoord oppervlakkig is.'; stofMax = 50000; }
   if (c.scenario === 'sollicitatie') { const f = v('chFunctie') || 'een functie'; const o = v('chOrg'); rol = 'Recruiter'; title = 'Sollicitatie: ' + f; role = `Je bent een recruiter/leidinggevende die een sollicitatiegesprek voert voor de functie "${f}"${o ? ' bij ' + o : ''}. Stel realistische vragen: motivatie, ervaring, sterke en zwakke punten, situatievragen (STAR) en vragen over de organisatie. Sluit af met de vraag of de kandidaat zelf nog vragen heeft.`; stofMax = ids.length ? 20000 : 0; }
   if (c.scenario === 'presentatie') { const o = v('chOnderwerp') || 'het onderwerp van de student'; rol = 'Jury'; title = 'Presentatie: ' + o; role = `De student heeft net een presentatie gegeven over "${o}". Jij bent docent/jurylid en stelt vragen na afloop: over keuzes, onderbouwing, bronnen, haalbaarheid en wat er beter kan.`; stofMax = ids.length ? 40000 : 0; }
   if (c.scenario === 'stage') { const o = v('chStage') || 'een stagegesprek'; rol = 'Stagebegeleider'; title = 'Stagegesprek'; role = `Je bent stagebegeleider. Situatie: ${o}. Je bespreekt hoe het gaat, vraagt naar concrete voorbeelden, leerdoelen, feedback van collega's en wat de student nog wil ontwikkelen.`; }
@@ -1349,8 +1373,9 @@ async function chatTurn() {
     const i = $('#chatIn'); if (i && !c.hands && !('ontouchstart' in window)) i.focus();
   }
 }
-async function startChat() {
-  const c = S.chat; const s = chatSetup();
+async function startChat(cfg) {
+  const c = S.chat; const s = chatSetup(cfg);
+  if (cfg && cfg.titel) s.title = cfg.titel;
   setBusy('Gesprek voorbereiden…');
   try { c.system = await buildSystem(s); } finally { setBusy(null); }
   const opener = s.verkoop ? 'Begin het gesprek: de verkoper komt net binnen of belt je. Reageer zoals deze klant zou doen (kort, in je rol) en laat de verkoper beginnen.' : 'Begin het gesprek: stel jezelf kort voor in je rol en stel je eerste vraag.';
@@ -1367,7 +1392,7 @@ async function chatTip() {
   const c = S.chat; const lastAi = [...c.msgs].reverse().find(m => m.role === 'assistant'); if (!lastAi) return;
   setBusy('Tip ophalen…');
   try {
-    const stof = c.scenario === 'mondeling' ? '\n\nStof:\n' + await material([...S.sel.chat], 20000) : '';
+    const stof = c.scenario === 'mondeling' ? '\n\nStof:\n' + await material((c.setupInfo && c.setupInfo.ids) || [...S.sel.chat], 20000) : '';
     const extraTip = c.scenario === 'verkoop' ? ' Denk aan verkooptechniek: LSD (luisteren, samenvatten, doorvragen), bezwaarbehandeling (erkennen, uitvragen, beantwoorden, checken), voordelen in plaats van kenmerken, en op tijd afsluiten.' : '';
     const irr = c.setupInfo && c.setupInfo.irritant ? ' De gesprekspartner is bewust irritant en ongeduldig; help de student rustig en kort te blijven.' : '';
     c.tips[c.msgs.lastIndexOf(lastAi)] = await callAI({ kind: 'tip', tier: 'quick', max_tokens: 400, prompt: `Een student oefent dit gesprek: ${c.title}. De gesprekspartner (${c.rol}) zei net:\n"${cleanTags(lastAi.content)}"\n\nGeef de student een korte, concrete tip (maximaal 3 zinnen) hoe die hier sterk op kan antwoorden, bijvoorbeeld welke structuur of welk voorbeeld.${extraTip}${irr} Zeg het antwoord niet volledig voor. Schrijf in het Nederlands en spreek de student aan met "je".${stof}` });
@@ -1382,7 +1407,7 @@ async function endChat() {
     const sv = c.setupInfo || {};
     const focus = sv.verkoop ? ' Let bij dit verkoopgesprek vooral op: behoefteonderzoek (open vragen, LSD), bezwaarbehandeling, voordelen in plaats van kenmerken, omgaan met kortingsverzoeken en of de student om de deal of een vervolgafspraak vroeg.' : '';
     const hard = sv.irritant ? ` De gesprekspartner was bewust irritant en heel moeilijk; beoordeel ook of de student rustig en professioneel bleef. Uitkomst: ${c.over === 'deal' ? 'de klant ging akkoord' : c.over === 'weg' ? 'de gesprekspartner liep weg' : 'geen duidelijke uitkomst'}${c.geduld != null ? `, eindgeduld ${c.geduld}/10` : ''}.` : (c.over === 'deal' ? ' Uitkomst: de klant ging akkoord.' : '');
-    const stof = c.scenario === 'mondeling' ? '\n\nSTOF:\n' + await material([...S.sel.chat], 50000) : '';
+    const stof = c.scenario === 'mondeling' ? '\n\nSTOF:\n' + await material((c.setupInfo && c.setupInfo.ids) || [...S.sel.chat], 50000) : '';
     const r = await aiJson({ kind: 'feedback', prompt: `Hieronder staat een oefengesprek (${c.title}) tussen een student en een AI die de rol van ${c.rol} speelde. Geef de student feedback als ervaren coach. Beoordeel inhoud, structuur, overtuigingskracht en hoe concreet de antwoorden waren (de antwoorden kunnen ingesproken en automatisch uitgeschreven zijn: beoordeel spelling en leestekens dus niet)${c.scenario === 'mondeling' ? ', en vooral of de inhoud klopt met de stof' : ''}.${focus}${hard} Spreek de student aan met "je".
 Antwoord met alleen JSON: {"cijfer":7.5,${sv.verkoop ? '"uitkomst":"Deal gesloten" of "Geen deal" of "Vervolgafspraak",' : ''}"samenvatting":"2-3 zinnen","sterk":["...","..."],"beter":["...","..."],"voorbeeld":{"vraag":"het moment of de vraag uit het gesprek waar de student het meest van kan leren","antwoord":"een sterk voorbeeldantwoord, in de ik-vorm"}}
 "cijfer" is op de Nederlandse schaal van 1 tot 10.
@@ -1392,6 +1417,7 @@ ${transcript}${stof}` });
     const cijfer = Math.max(1, Math.min(10, +r.cijfer || 5.5));
     c.feedback = { cijfer, uitkomst: sv.verkoop ? String(r.uitkomst || (c.over === 'deal' ? 'Deal gesloten' : 'Geen deal')) : (c.over === 'weg' ? 'Weggelopen' : ''), samenvatting: String(r.samenvatting || ''), sterk: (r.sterk || []).map(String), beter: (r.beter || []).map(String), voorbeeld: r.voorbeeld || null };
     c.phase = 'feedback'; markStudy();
+    if (c.opdracht) saveOpdrResult({ opdracht_id: c.opdracht, cijfer, uitkomst: c.feedback.uitkomst || '', feedback: { samenvatting: c.feedback.samenvatting, sterk: c.feedback.sterk, beter: c.feedback.beter } });
     try { const row = await q(sb.from('sessions').insert({ title: c.title, scenario: c.scenario, cijfer, feedback: c.feedback, msgs: c.msgs.slice(1, 41).map(m => ({ role: m.role, content: m.role === 'assistant' ? cleanTags(m.content) : m.content })) }).select('id,title,scenario,cijfer,feedback,created_at').single()); S.sessions.unshift(row); } catch (e) { dbErr(e); }
   } catch (e) { aiErr(e); }
   finally { setBusy(null); }
@@ -1460,7 +1486,7 @@ async function loadRequests() {
 const pendingReqs = () => (S.admin.reqs || []).filter(r => r.status === 'nieuw');
 async function loadAdmin() {
   if (S.admin.loading) return; S.admin.loading = true;
-  try { S.admin.rows = await q(sb.rpc('admin_overview')); }
+  try { S.admin.rows = await q(sb.rpc('admin_overview')); await loadAdminKlassen(); }
   catch (e) { console.error(e); toast('Accounts laden lukte niet.'); S.admin.rows = []; }
   try { await loadRequests(); } catch (e) { console.error(e); }
   S.admin.loading = false; render();
@@ -1488,6 +1514,7 @@ async function adminFn(body) {
 }
 async function adminCreate() {
   const A = S.admin; const role = A.newRole; const groep = $('#adGroep').value.trim(); const limit = +$('#adLimit').value || 60; const sendMail = $('#adMail').checked;
+  const klas_id = role === 'student' && $('#adKlas') ? ($('#adKlas').value || null) : null; A.lastKlas = klas_id || '';
   let list = [];
   if (A.bulk) list = $('#adBulk').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const p = l.split(/[;,\t]/).map(x => x.trim()); return p.length > 1 ? { name: p[0], email: p[1] } : { name: '', email: p[0] }; });
   else list = [{ email: $('#adEmail').value.trim(), name: $('#adName').value.trim() }];
@@ -1496,7 +1523,7 @@ async function adminCreate() {
   let ok = 0, mailed = 0; const fails = [];
   for (let i = 0; i < list.length; i++) {
     setBusy(`Account ${i + 1} van ${list.length} toevoegen…`);
-    try { const r = await adminFn({ action: 'create', email: list[i].email, name: list[i].name, role, groep, daily_ai_limit: limit, sendMail }); ok++; if (r.mailed) mailed++; }
+    try { const r = await adminFn({ action: 'create', email: list[i].email, name: list[i].name, role, groep, daily_ai_limit: limit, sendMail, klas_id }); ok++; if (r.mailed) mailed++; }
     catch (e) { console.error('admin create', e); fails.push(`${list[i].email} (${e.error === 'exists' ? 'bestaat al' : e.error === 'bad_email' ? 'ongeldig adres' : e.error === 'db' ? 'databasefout: ' + (e.message || '') : (e.error || 'fout') + (e.message && e.message !== e.error ? ': ' + e.message : '')})`); }
   }
   setBusy(null);
@@ -1504,6 +1531,305 @@ async function adminCreate() {
   if (sendMail && ok && !mailed) toast('Er zijn geen welkomstmails verstuurd. Controleer of RESEND_API_KEY bij de Edge Function-secrets staat.', 9000);
   ['adEmail', 'adName', 'adBulk'].forEach(id => { const el = $('#' + id); if (el) el.value = ''; });
   S.admin.rows = null; render();
+}
+
+/* ================= klassen, docenten en opdrachten ================= */
+const isTeacher = () => !!(S.isDocent || S.isAdmin);
+const allDocs = () => [...S.docs, ...S.kdocs];
+const klasNaam = id => { const k = (S.T.klassen || []).find(x => x.id === id) || ((S.admin.klassen || []).find(x => x.id === id)) || (S.klas && S.klas.klas_id === id ? { naam: S.klas.naam } : null); return k ? k.naam : 'Onbekende klas'; };
+const myKlasDocs = () => S.klas ? S.kdocs.filter(d => d.klas_id === S.klas.klas_id) : [];
+const myOpdr = () => S.klas ? S.opdr.filter(o => o.klas_id === S.klas.klas_id) : [];
+const opdrResults = id => S.myRes.filter(r => r.opdracht_id === id);
+const bestOf = rs => rs.length ? rs.reduce((b, r) => Number(r.cijfer) > Number(b.cijfer) ? r : b) : null;
+const TYPE_LABEL = { toets: 'Oefentoets', gesprek: 'Gesprek' };
+const SCEN_LABEL = { verkoop: 'Verkoopgesprek', mondeling: 'Mondeling', sollicitatie: 'Sollicitatie', presentatie: 'Vragen na presentatie' };
+const TOON_LABEL = { vriendelijk: 'Vriendelijk', neutraal: 'Neutraal', streng: 'Kritisch', irritant: 'Irritant 🔥' };
+function dueLabel(d) {
+  if (!d) return { t: 'geen deadline', cls: '' };
+  const n = daysUntil(d);
+  if (n < 0) return { t: 'deadline verlopen', cls: 'bad' };
+  if (n === 0) return { t: 'vandaag inleveren', cls: 'bad' };
+  if (n === 1) return { t: 'morgen', cls: 'warn' };
+  return { t: 'nog ' + n + ' dagen', cls: n <= 3 ? 'warn' : '' };
+}
+function opdrSummary(o) {
+  const c = o.config || {};
+  if (o.type === 'toets') return `${c.n || 10} vragen · ${({ mix: 'gemengd', mc: 'meerkeuze', open: 'open' })[c.soort] || 'gemengd'} · ${({ basis: 'basis', toets: 'toetsniveau', pittig: 'pittig' })[c.niveau] || 'toetsniveau'}`;
+  return `${SCEN_LABEL[c.scenario] || 'Gesprek'} · ${TOON_LABEL[c.toon] || 'Neutraal'}${c.chProduct ? ' · ' + c.chProduct : ''}`;
+}
+
+async function loadKlasData() {
+  S.klasErr = false;
+  try {
+    const kd = [], op = [];
+    const { data: mk, error: e1 } = await sb.rpc('mijn_klas');
+    if (e1) throw e1;
+    S.klas = (mk && mk[0]) || null;
+    const klasIds = new Set();
+    if (S.klas) klasIds.add(S.klas.klas_id);
+    if (isTeacher()) {
+      const kl = await q(sb.from('klassen').select('*').order('naam'));
+      let mine = kl;
+      if (!S.isAdmin) { const links = await q(sb.from('klas_docenten').select('klas_id').eq('docent_email', S.account.email)); const ids = new Set(links.map(l => l.klas_id)); mine = kl.filter(k => ids.has(k.id)); }
+      S.T.klassen = mine; mine.forEach(k => klasIds.add(k.id));
+      if (!S.T.sel || !mine.some(k => k.id === S.T.sel)) S.T.sel = mine[0] ? mine[0].id : null;
+    }
+    if (klasIds.size) {
+      const ids = [...klasIds];
+      kd.push(...await q(sb.from('klas_docs').select('id,klas_id,vak,title,chars,source,file_path,file_name,created_by,created_at').in('klas_id', ids).order('created_at', { ascending: false })));
+      op.push(...await q(sb.from('opdrachten').select('*').in('klas_id', ids).order('created_at', { ascending: false })));
+    }
+    S.kdocs = kd; S.opdr = op;
+    S.myRes = await q(sb.from('opdracht_resultaten').select('*').eq('user_id', S.user.id).order('created_at', { ascending: false }));
+  } catch (e) {
+    console.warn('klasdata', e); S.klasErr = true; S.klas = null; S.kdocs = []; S.opdr = []; S.myRes = [];
+  }
+}
+
+/* ---- student: toestemming, opdrachten, lesstof ---- */
+function consentCard() {
+  if (!S.klas || S.klas.deelt_resultaten != null) return '';
+  const doc = (S.klas.docenten || []).join(', ');
+  return `<section class="panel" style="border-color:var(--pen)"><h3>Je zit in klas ${esc(S.klas.naam)}</h3>
+    <p>${doc ? `Je docent${S.klas.docenten.length > 1 ? 'en' : ''}: <b>${esc(doc)}</b>. ` : ''}Mag je docent de resultaten van de <b>opdrachten</b> die hij of zij klaarzet zien (cijfer en uitkomst)?</p>
+    <p class="small muted">Je eigen stof, aantekeningen, flashcards en oefeningen blijven altijd privé. Je kunt dit later wijzigen bij Account.</p>
+    <div class="row"><button class="btn hl" data-act="share" data-v="1">Ja, deel mijn opdrachtresultaten</button><button class="btn ghost" data-act="share" data-v="0">Nee, liever niet</button></div></section>`;
+}
+function opdrPanelStudent() {
+  const list = myOpdr(); if (!S.klas || !list.length) return '';
+  const today = todayStr();
+  const open = list.filter(o => !o.deadline || o.deadline >= today).sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'));
+  const past = list.filter(o => o.deadline && o.deadline < today);
+  const row = o => {
+    const rs = opdrResults(o.id); const best = bestOf(rs); const dl = dueLabel(o.deadline);
+    return `<div class="item"><div class="main"><span class="t">${esc(o.titel)}</span><span class="small muted">${TYPE_LABEL[o.type]} · ${esc(opdrSummary(o))}${o.deadline ? ' · inleveren ' + fmtDay(o.deadline) : ''}</span>${o.uitleg ? `<span class="small">${esc(o.uitleg)}</span>` : ''}</div>
+      ${best ? `<span class="grade ${vClass(best.cijfer)}" title="Beste cijfer">${fmtCijfer(best.cijfer)}</span>` : `<span class="pill ${dl.cls}">${dl.t}</span>`}
+      <button class="btn sm ${best ? 'ghost' : 'hl'}" data-act="opdrstart" data-id="${o.id}" ${S.busy ? 'disabled' : ''}>${best ? 'Opnieuw' : 'Start'}</button></div>`;
+  };
+  return `<section class="panel"><div class="row between"><h3>Opdrachten van je docent</h3><span class="label">${plural(open.filter(o => !opdrResults(o.id).length).length, 'te doen', 'te doen')}</span></div>
+    ${open.length ? `<div class="list">${open.map(row).join('')}</div>` : `<p class="small muted">Geen openstaande opdrachten.</p>`}
+    ${past.length ? `<details><summary class="link small" style="cursor:pointer">Eerdere opdrachten (${past.length})</summary><div class="list" style="margin-top:8px">${past.map(row).join('')}</div></details>` : ''}
+    ${S.klas.deelt_resultaten ? `<p class="small muted">Je docent ziet je cijfers van deze opdrachten.</p>` : `<p class="small muted">Je docent ziet je resultaten niet. Wijzigen kan bij Account.</p>`}</section>`;
+}
+function klasDocsSection() {
+  const ds = myKlasDocs(); if (!ds.length) return '';
+  const groups = {}; ds.forEach(d => (groups[d.vak] = groups[d.vak] || []).push(d));
+  return `<section class="panel"><div class="row between"><h3>📚 Van je docent</h3><span class="label">${plural(ds.length, 'document', 'documenten')}</span></div>
+    <p class="small muted">Lesstof die je docent met klas ${esc(S.klas.naam)} deelt. Je kunt ermee oefenen zoals met je eigen stof.</p>
+    ${Object.keys(groups).sort().map(v => `<div class="stack" style="gap:4px"><span class="label">${esc(v)}</span><div class="list">${groups[v].map(d => kdocItem(d, false)).join('')}</div></div>`).join('')}</section>`;
+}
+function kdocItem(d, canEdit) {
+  const open = S.openDoc === d.id; const conf = S.confirm === 'kdoc:' + d.id;
+  return `<div class="item"><div class="main"><span class="t">${esc(d.title)}</span><span class="small muted mono">${(d.chars || 0).toLocaleString('nl-NL')} tekens · ${esc(d.source || '')} · ${fmtDate(d.created_at)}</span></div>
+    ${conf ? `<span class="small">Verwijderen voor de hele klas?</span><button class="btn sm danger" data-act="kdocdel" data-id="${d.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
+    `<button class="btn sm ghost" data-act="docview" data-id="${d.id}">${open ? 'Sluit' : 'Bekijk'}</button>${d.file_path ? `<button class="btn sm ghost" data-act="kdocfile" data-id="${d.id}">Origineel</button>` : ''}${canEdit ? '' : `<button class="btn sm ghost" data-act="ask" data-id="${d.id}">Vraag erover</button>`}${canEdit ? `<button class="link small" data-act="confirm" data-key="kdoc:${d.id}">Verwijder</button>` : ''}`}
+    ${open ? `<div class="preview">${S.texts[d.id] == null ? 'Laden…' : esc(S.texts[d.id].slice(0, 6000)) + (S.texts[d.id].length > 6000 ? '\n…' : '')}</div>` : ''}</div>`;
+}
+function opdrBanner(o) {
+  if (!o) return '';
+  return `<div class="notice"><b>Opdracht: ${esc(o.titel)}</b>${o.deadline ? ` · inleveren ${fmtDay(o.deadline)}` : ''}${o.uitleg ? `<br><span class="small">${esc(o.uitleg)}</span>` : ''}</div>`;
+}
+async function startOpdracht(id) {
+  const o = S.opdr.find(x => x.id === id); if (!o) return;
+  const c = o.config || {}; const ids = (o.doc_ids || []).filter(i => S.kdocs.some(d => d.id === i));
+  if (o.type === 'toets') {
+    if (!ids.length) { toast('De lesstof van deze opdracht is niet (meer) beschikbaar. Vraag je docent om de opdracht te controleren.', 7000); return; }
+    Object.assign(S.quiz, { phase: 'setup', n: c.n || 10, soort: c.soort || 'mix', niveau: c.niveau || 'toets', opdracht: o.id });
+    S.tab = 'toets'; render(); window.scrollTo(0, 0);
+    await startQuiz(ids, c.focus || '');
+  } else {
+    unlockSpeech();
+    Object.assign(S.chat, { scenario: c.scenario || 'verkoop', toon: c.toon || 'neutraal', lengte: c.lengte || 'normaal', opdracht: o.id });
+    S.tab = 'gesprek'; render(); window.scrollTo(0, 0);
+    await startChat({ ...c, ids });
+  }
+}
+async function saveOpdrResult(row) {
+  try { const r = await q(sb.from('opdracht_resultaten').insert(row).select().single()); S.myRes.unshift(r); toast(S.klas && S.klas.deelt_resultaten ? 'Opdracht ingeleverd. Je docent ziet je resultaat.' : 'Opdracht afgerond.'); }
+  catch (e) { console.error(e); toast('Je resultaat voor de opdracht kon niet worden opgeslagen.', 6000); }
+}
+
+/* ---- docent: tabblad Klassen ---- */
+function vKlassen() {
+  const T = S.T;
+  if (S.klasErr) return `<div class="stack"><h2>Klassen</h2><div class="notice">Klassen zijn nog niet ingesteld. De beheerder moet <b>docenten.sql</b> in Supabase draaien.</div></div>`;
+  if (!T.klassen.length) return `<div class="stack"><h2>Klassen</h2><section class="panel"><p>Je bent nog niet aan een klas gekoppeld.</p><p class="small muted">${S.isAdmin ? 'Maak klassen aan en koppel docenten bij Beheer → Klassen.' : 'De beheerder koppelt je aan de klassen die je mag beheren. Daarna zie je ze hier.'}</p></section></div>`;
+  const k = T.klassen.find(x => x.id === T.sel) || T.klassen[0]; T.sel = k.id;
+  let h = `<div class="stack"><div class="row between"><h2>Klassen</h2><button class="btn sm ghost" data-act="klasreload">Vernieuwen</button></div>`;
+  if (T.klassen.length > 1) h += `<div class="chips">${T.klassen.map(x => `<button class="chip" data-act="klassel" data-id="${x.id}" aria-pressed="${x.id === k.id}">${esc(x.naam)}</button>`).join('')}</div>`;
+  h += `<section class="panel"><div class="row between"><h3>${esc(k.naam)}</h3><span class="small muted">${esc(k.school || '')}</span></div>${seg('T.sub', T.sub, [['opdrachten', 'Opdrachten'], ['lesstof', 'Lesstof'], ['leerlingen', 'Leerlingen']])}</section>`;
+  if (T.sub === 'lesstof') h += klasLesstof(k);
+  else if (T.sub === 'leerlingen') h += klasLeerlingen(k);
+  else h += klasOpdrachten(k);
+  return h + `</div>`;
+}
+function klasLesstof(k) {
+  const ds = S.kdocs.filter(d => d.klas_id === k.id); const vakken = [...new Set(ds.map(d => d.vak))].sort();
+  const groups = {}; ds.forEach(d => (groups[d.vak] = groups[d.vak] || []).push(d));
+  return `<section class="panel"><h3>Lesstof delen met ${esc(k.naam)}</h3>
+    <label class="field"><span>Vak</span><input id="kVak" list="kVakList" placeholder="bijv. Marketing" maxlength="60" value="${esc(S.T.vak || '')}"></label><datalist id="kVakList">${vakken.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+    <label class="drop" id="kdrop"><input type="file" id="kFile" multiple accept=".pdf,.docx,.txt,.md,.csv"><b><span class="desk-only">Sleep bestanden hierheen of klik om te kiezen</span><span class="touch-only">Tik om een bestand te kiezen</span></b><span class="small muted">PDF, Word (.docx) of tekst. Alle leerlingen in de klas zien het direct.</span></label>
+    <details><summary class="link" style="cursor:pointer">Of plak tekst</summary><div class="stack" style="margin-top:10px"><label class="field"><span>Titel</span><input id="kTitle" placeholder="bijv. Hoofdstuk 3 – Prijsstrategieën"></label><textarea id="kText" placeholder="Plak hier de lesstof"></textarea><div><button class="btn" data-act="kpaste">Delen met de klas</button></div></div></details></section>
+    <section class="panel"><div class="row between"><h3>Gedeelde lesstof</h3><span class="label">${ds.length}</span></div>
+    ${ds.length ? Object.keys(groups).sort().map(v => `<div class="stack" style="gap:4px"><span class="label">${esc(v)}</span><div class="list">${groups[v].map(d => kdocItem(d, true)).join('')}</div></div>`).join('') : `<p class="small muted">Nog geen lesstof gedeeld. Lesstof heb je nodig voor oefentoetsen en mondelinge opdrachten.</p>`}</section>`;
+}
+function klasLeerlingen(k) {
+  const ls = S.T.leerlingen[k.id];
+  if (!ls) { loadLeerlingen(k.id); return `<section class="panel"><p class="muted">Leerlingen laden…</p></section>`; }
+  const delen = ls.filter(l => l.deelt_resultaten === true).length;
+  return `<section class="panel"><div class="row between"><h3>Leerlingen</h3><span class="label">${ls.length} · ${delen} delen resultaten</span></div>
+    ${ls.length ? `<div class="list">${ls.map(l => `<div class="item"><div class="main"><span class="t">${esc(l.name || l.email)}</span><span class="small muted mono">${esc(l.email)}</span></div>
+      ${l.deelt_resultaten === true ? `<span class="pill good">deelt resultaten</span>${l.laatst_actief ? `<span class="small muted">actief ${fmtDay(l.laatst_actief)}</span>` : ''}` : l.deelt_resultaten === false ? `<span class="pill">deelt niet</span>` : `<span class="pill warn">nog niet gekozen</span>`}</div>`).join('')}</div>` : `<p class="small muted">Er zitten nog geen leerlingen in deze klas.</p>`}
+    <p class="small muted">Leerlingen worden door de beheerder aan de klas toegevoegd. Je ziet alleen resultaten van opdrachten bij leerlingen die daar toestemming voor gaven, nooit hun eigen stof of oefeningen.</p></section>`;
+}
+async function loadLeerlingen(klasId) {
+  if (S.T.loadingL) return; S.T.loadingL = true;
+  try { S.T.leerlingen[klasId] = await q(sb.rpc('klas_leerlingen', { p_klas: klasId })); }
+  catch (e) { console.error(e); S.T.leerlingen[klasId] = []; toast('Leerlingen laden lukte niet.'); }
+  finally { S.T.loadingL = false; render(); }
+}
+function klasOpdrachten(k) {
+  const T = S.T; const F = T.form; const ops = S.opdr.filter(o => o.klas_id === k.id);
+  const ds = S.kdocs.filter(d => d.klas_id === k.id);
+  const docPick = ds.length ? `<div class="picker"><span class="label">Lesstof voor deze opdracht</span><div class="chips">${ds.map(d => `<button class="chip" data-act="opdpick" data-id="${d.id}" aria-pressed="${T.pick.has(d.id)}" title="${esc(d.title)}">${esc(d.vak)} · ${esc(d.title)}</button>`).join('')}</div></div>` : `<div class="notice">Deel eerst lesstof met deze klas (tab Lesstof). Die heb je nodig voor oefentoetsen en mondelinge opdrachten.</div>`;
+  let form = `<section class="panel"><details ${ops.length ? '' : 'open'} id="opdForm"><summary class="link" style="cursor:pointer;font-weight:700">+ Nieuwe opdracht klaarzetten</summary><div class="stack" style="margin-top:12px">
+    <div class="fields"><label class="field"><span>Titel</span><input id="oTitel" maxlength="100" placeholder="bijv. Verkoopgesprek website – irritante klant"></label><label class="field"><span>Inleveren vóór (optioneel)</span><input id="oDeadline" type="date" min="${todayStr()}"></label></div>
+    <label class="field"><span>Uitleg voor de leerlingen (optioneel)</span><textarea id="oUitleg" maxlength="1000" placeholder="bijv. Probeer de klant te overtuigen zonder korting te geven."></textarea></label>
+    <div class="field"><span>Soort opdracht</span>${seg('T.form.type', F.type, [['toets', 'Oefentoets'], ['gesprek', 'Gesprek']])}</div>`;
+  if (F.type === 'toets') form += `${docPick}
+    <div class="fields"><div class="field"><span>Aantal vragen</span>${seg('T.form.n', F.n, [[5, '5'], [10, '10'], [15, '15'], [20, '20']])}</div>
+    <div class="field"><span>Soort</span>${seg('T.form.soort', F.soort, [['mix', 'Gemengd'], ['mc', 'Meerkeuze'], ['open', 'Open']])}</div>
+    <div class="field"><span>Niveau</span>${seg('T.form.niveau', F.niveau, [['basis', 'Basis'], ['toets', 'Toetsniveau'], ['pittig', 'Pittig']])}</div></div>
+    <label class="field"><span>Focus (optioneel)</span><input id="oFocus" placeholder="bijv. DESTEP en prijsstrategieën"></label>`;
+  else {
+    form += `<div class="field"><span>Gesprek</span>${seg('T.form.scenario', F.scenario, Object.entries(SCEN_LABEL))}</div>`;
+    if (F.scenario === 'verkoop') form += `<div class="fields"><label class="field"><span>Wat verkopen ze?</span><input id="oProduct" placeholder="bijv. een nieuwe website voor een kapsalon"></label><label class="field"><span>Aan wie? (optioneel)</span><input id="oKlant" placeholder="bijv. eigenaar van 3 kapsalons"></label><label class="field"><span>Prijs (optioneel)</span><input id="oPrijs" placeholder="bijv. € 2.500"></label></div>`;
+    if (F.scenario === 'sollicitatie') form += `<div class="fields"><label class="field"><span>Functie</span><input id="oFunctie" placeholder="bijv. Stagiair marketing"></label><label class="field"><span>Organisatie (optioneel)</span><input id="oOrg"></label></div>`;
+    if (F.scenario === 'presentatie') form += `<label class="field"><span>Onderwerp van de presentatie</span><input id="oOnderwerp" placeholder="bijv. Marketingplan voor een lokale bakkerij"></label>`;
+    if (F.scenario === 'mondeling' || F.scenario === 'verkoop') form += F.scenario === 'mondeling' ? docPick : (ds.length ? `<details><summary class="link small" style="cursor:pointer">Productinformatie uit de lesstof meegeven (optioneel)</summary><div style="margin-top:8px">${docPick}</div></details>` : '');
+    form += `<div class="fields"><div class="field"><span>Moeilijkheid</span>${seg('T.form.toon', F.toon, Object.entries(TOON_LABEL))}</div><div class="field"><span>Lengte</span>${seg('T.form.lengte', F.lengte, [['kort', 'Kort'], ['normaal', 'Normaal'], ['lang', 'Lang']])}</div></div>`;
+  }
+  form += `<div><button class="btn" data-act="opdsave" ${S.busy ? 'disabled' : ''}>Opdracht klaarzetten</button></div></div></details></section>`;
+  const list = ops.length ? ops.map(o => opdrCard(o, k)).join('') : `<section class="panel"><p class="small muted">Nog geen opdrachten voor deze klas.</p></section>`;
+  return form + list;
+}
+function opdrCard(o, k) {
+  const T = S.T; const open = T.openOpd === o.id; const conf = S.confirm === 'opd:' + o.id; const dl = dueLabel(o.deadline);
+  let h = `<section class="panel"><div class="row between"><div class="stack" style="gap:2px"><b>${esc(o.titel)}</b><span class="small muted">${TYPE_LABEL[o.type]} · ${esc(opdrSummary(o))}</span></div><span class="pill ${dl.cls}">${o.deadline ? fmtDay(o.deadline) + ' · ' : ''}${dl.t}</span></div>
+    ${o.uitleg ? `<p class="small">${esc(o.uitleg)}</p>` : ''}
+    <div class="row">${conf ? `<span class="small">Opdracht en alle resultaten verwijderen?</span><button class="btn sm danger" data-act="opddel" data-id="${o.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
+    `<button class="btn sm" data-act="opdres" data-id="${o.id}">${open ? 'Verberg resultaten' : 'Resultaten'}</button><button class="btn sm ghost" data-act="opdrstart" data-id="${o.id}">Probeer zelf</button><button class="link small" data-act="confirm" data-key="opd:${o.id}">Verwijder</button>`}</div>`;
+  if (open) {
+    const res = T.res[o.id]; const ls = T.leerlingen[k.id];
+    if (!res || !ls) { loadOpdrRes(o, k.id); h += `<p class="muted small">Resultaten laden…</p>`; }
+    else {
+      const by = {}; res.forEach(r => (by[r.student_email] = by[r.student_email] || []).push(r));
+      const made = ls.filter(l => by[l.email]).length; const bests = Object.values(by).map(bestOf).filter(Boolean);
+      const avg = bests.length ? bests.reduce((s, r) => s + Number(r.cijfer), 0) / bests.length : null;
+      h += `<div class="row"><span class="small"><b>${made}</b> van ${ls.filter(l => l.deelt_resultaten === true).length} leerlingen die resultaten delen hebben de opdracht gemaakt${avg != null ? ` · gemiddeld <span class="grade ${vClass(avg)}">${fmtCijfer(avg)}</span>` : ''}</span></div>
+      <div class="tablewrap"><table><thead><tr><th>Leerling</th><th>Beste cijfer</th><th>Pogingen</th><th>Laatste poging</th>${o.type === 'gesprek' ? '<th>Uitkomst</th>' : ''}</tr></thead><tbody>
+      ${ls.map(l => { const rs = by[l.email] || []; const b = bestOf(rs);
+        if (l.deelt_resultaten !== true) return `<tr><td>${esc(l.name || l.email)}</td><td colspan="${o.type === 'gesprek' ? 4 : 3}" class="small muted">${l.deelt_resultaten === false ? 'deelt geen resultaten' : 'heeft nog niet gekozen of resultaten gedeeld worden'}</td></tr>`;
+        return `<tr><td>${esc(l.name || l.email)}</td><td>${b ? `<span class="grade ${vClass(b.cijfer)}">${fmtCijfer(b.cijfer)}</span>` : '<span class="small muted">nog niet gemaakt</span>'}</td><td class="num">${rs.length || ''}</td><td class="small">${rs[0] ? fmtDate(rs[0].created_at) : ''}</td>${o.type === 'gesprek' ? `<td class="small">${b ? esc(b.uitkomst || '') : ''}</td>` : ''}</tr>`; }).join('')}
+      </tbody></table></div>`;
+    }
+  }
+  return h + `</section>`;
+}
+async function loadOpdrRes(o, klasId) {
+  const key = 'res:' + o.id; if (S.T[key]) return; S.T[key] = true;
+  try {
+    const [res, ls] = await Promise.all([q(sb.from('opdracht_resultaten').select('*').eq('opdracht_id', o.id).order('created_at', { ascending: false })), S.T.leerlingen[klasId] ? Promise.resolve(S.T.leerlingen[klasId]) : q(sb.rpc('klas_leerlingen', { p_klas: klasId }))]);
+    S.T.res[o.id] = res; S.T.leerlingen[klasId] = ls;
+  } catch (e) { console.error(e); toast('Resultaten laden lukte niet.'); S.T.res[o.id] = []; S.T.leerlingen[klasId] = S.T.leerlingen[klasId] || []; }
+  finally { delete S.T[key]; render(); }
+}
+async function saveOpdracht() {
+  const T = S.T; const F = T.form; const v = id => ($('#' + id) && $('#' + id).value.trim()) || '';
+  const titel = v('oTitel'); if (!titel) { toast('Geef de opdracht een titel.'); return; }
+  const doc_ids = [...T.pick].filter(id => S.kdocs.some(d => d.id === id && d.klas_id === T.sel));
+  let config;
+  if (F.type === 'toets') {
+    if (!doc_ids.length) { toast('Kies de lesstof waar de oefentoets over gaat.'); return; }
+    config = { n: F.n, soort: F.soort, niveau: F.niveau, focus: v('oFocus') };
+  } else {
+    config = { scenario: F.scenario, toon: F.toon, lengte: F.lengte };
+    if (F.scenario === 'verkoop') Object.assign(config, { chProduct: v('oProduct'), chKlant: v('oKlant'), chPrijs: v('oPrijs') });
+    if (F.scenario === 'sollicitatie') Object.assign(config, { chFunctie: v('oFunctie'), chOrg: v('oOrg') });
+    if (F.scenario === 'presentatie') Object.assign(config, { chOnderwerp: v('oOnderwerp') });
+    if (F.scenario === 'mondeling' && !doc_ids.length) { toast('Kies de lesstof waar het mondeling over gaat.'); return; }
+    if (F.scenario === 'verkoop' && !config.chProduct) { toast('Vul in wat de leerlingen moeten verkopen.'); return; }
+  }
+  setBusy('Opdracht klaarzetten…');
+  try {
+    const row = await q(sb.from('opdrachten').insert({ klas_id: T.sel, titel, uitleg: v('oUitleg'), type: F.type, config, doc_ids, deadline: v('oDeadline') || null }).select().single());
+    S.opdr.unshift(row); T.pick = new Set();
+    ['oTitel', 'oUitleg', 'oDeadline', 'oFocus', 'oProduct', 'oKlant', 'oPrijs', 'oFunctie', 'oOrg', 'oOnderwerp'].forEach(id => { const el = $('#' + id); if (el) el.value = ''; });
+    toast(`Opdracht "${titel}" staat klaar voor ${klasNaam(T.sel)}.`);
+  } catch (e) { dbErr(e); }
+  finally { setBusy(null); }
+}
+async function addKlasDoc({ klasId, vak, title, text, source, file }) {
+  text = (text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (text.length < 40) { toast(`“${title}” bevat (bijna) geen tekst. Is het een scan? Plak dan de tekst of gebruik een PDF met tekst.`, 7000); return false; }
+  const parts = []; for (let i = 0; i < text.length && parts.length < 8; i += MAXCH) parts.push(text.slice(i, i + MAXCH));
+  for (let i = 0; i < parts.length; i++) {
+    const row = await q(sb.from('klas_docs').insert({ klas_id: klasId, vak: vak || 'Algemeen', title: parts.length > 1 ? `${title} (deel ${i + 1})` : title, text: parts[i], chars: parts[i].length, source })
+      .select('id,klas_id,vak,title,chars,source,file_path,file_name,created_by,created_at').single());
+    S.texts[row.id] = parts[i];
+    if (file && i === 0) {
+      const path = `${klasId}/${row.id}/${file.name.replace(/[^\w.\-]+/g, '_').slice(-120)}`;
+      const { error } = await sb.storage.from('klasstof').upload(path, file, { upsert: true, contentType: file.type || undefined });
+      if (!error) { await sb.from('klas_docs').update({ file_path: path, file_name: file.name }).eq('id', row.id); row.file_path = path; row.file_name = file.name; }
+    }
+    S.kdocs.unshift(row);
+  }
+  toast(`“${title}” is gedeeld met ${klasNaam(klasId)}.`);
+  return true;
+}
+async function handleKlasFiles(files) {
+  const T = S.T; const vak = ($('#kVak') && $('#kVak').value.trim()) || 'Algemeen'; T.vak = vak;
+  try {
+    for (const f of Array.from(files)) {
+      const ext = f.name.split('.').pop().toLowerCase();
+      if (f.size > 40e6) { toast(`${f.name} is groter dan 40 MB.`); continue; }
+      try {
+        setBusy(`“${f.name}” lezen…`);
+        let text = '';
+        if (ext === 'pdf') text = await readPdf(f); else if (ext === 'docx') text = await readDocx(f); else if (['txt', 'md', 'csv'].includes(ext)) text = await f.text();
+        else { toast(`${f.name}: gebruik PDF, Word (.docx) of tekst.`, 6000); continue; }
+        await addKlasDoc({ klasId: T.sel, vak, title: f.name.replace(/\.[^.]+$/, ''), text, source: ext, file: f });
+      } catch (e) { console.error(e); toast(`${f.name} kon niet gelezen worden.`, 6000); }
+    }
+  } finally { setBusy(null); }
+}
+function bindKlasDrop() {
+  const d = $('#kdrop'); if (!d || d.dataset.b) return; d.dataset.b = 1;
+  const f = $('#kFile');
+  f.addEventListener('change', () => { if (f.files.length) handleKlasFiles([...f.files]); f.value = ''; });
+  ['dragenter', 'dragover'].forEach(e => d.addEventListener(e, ev => { ev.preventDefault(); d.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(e => d.addEventListener(e, ev => { ev.preventDefault(); d.classList.remove('over'); }));
+  d.addEventListener('drop', ev => { if (ev.dataTransfer.files.length) handleKlasFiles([...ev.dataTransfer.files]); });
+}
+
+/* ---- beheer: klassen en koppelingen ---- */
+async function loadAdminKlassen() {
+  try { S.admin.klassen = await q(sb.rpc('admin_klassen')); S.admin.klasErr = false; }
+  catch (e) { console.warn('admin_klassen', e); S.admin.klassen = []; S.admin.klasErr = true; }
+}
+const klasSelect = (id, sel, attrs = '') => `<select ${id ? `id="${id}"` : ''} ${attrs}><option value="">Geen klas</option>${(S.admin.klassen || []).map(k => `<option value="${k.id}" ${sel === k.id ? 'selected' : ''}>${esc(k.naam)}${k.school ? ' · ' + esc(k.school) : ''}</option>`).join('')}</select>`;
+function klassenSection() {
+  const A = S.admin;
+  if (A.klasErr) return `<section class="panel"><h3>Klassen</h3><div class="notice">Klassen zijn nog niet ingesteld. Draai <b>docenten.sql</b> in Supabase (SQL Editor).</div></section>`;
+  const ks = A.klassen || []; const docenten = (A.rows || []).filter(r => r.role === 'docent' || r.role === 'admin');
+  return `<section class="panel"><div class="row between"><h3>Klassen</h3><span class="label">${ks.length}</span></div>
+    <div class="row" style="align-items:flex-end"><label class="field" style="flex:1 1 160px"><span>Naam klas</span><input id="kNaam" placeholder="bijv. CE1A" maxlength="60"></label><label class="field" style="flex:1 1 200px"><span>School (optioneel)</span><input id="kSchool" placeholder="bijv. Hogeschool Leiden" maxlength="100"></label><button class="btn" data-act="klasadd">Klas toevoegen</button></div>
+    ${ks.length ? `<div class="list">${ks.map(k => { const conf = S.confirm === 'klas:' + k.id; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}${k.school ? ` <span class="small muted">· ${esc(k.school)}</span>` : ''}</span>
+      <span class="small muted">${plural(Number(k.leerlingen), 'leerling', 'leerlingen')} · ${plural(Number(k.opdrachten), 'opdracht', 'opdrachten')} · ${Number(k.lesstof)} lesstof</span>
+      <div class="chips" style="margin-top:4px">${(k.docenten || []).map(e => { const d = (A.rows || []).find(r => r.email === e); return `<span class="pill">${esc(d && d.name ? d.name : e)} <button class="link small" data-act="klasunlink" data-klas="${k.id}" data-email="${esc(e)}" aria-label="Ontkoppel ${esc(e)}">✕</button></span>`; }).join('') || '<span class="small muted">Nog geen docent gekoppeld</span>'}</div>
+      <div class="row" style="margin-top:6px"><select data-linksel="${k.id}" style="width:auto;max-width:100%"><option value="">Docent koppelen…</option>${docenten.filter(d => !(k.docenten || []).includes(d.email)).map(d => `<option value="${esc(d.email)}">${esc(d.name || d.email)}${d.role === 'admin' ? ' (beheerder)' : ''}</option>`).join('')}</select></div></div>
+      ${conf ? `<span class="small">Klas verwijderen? Ook alle lesstof en opdrachten van deze klas worden gewist.</span><button class="btn sm danger" data-act="klasdel" data-id="${k.id}">Verwijder klas</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="link small" data-act="confirm" data-key="klas:${k.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : `<p class="small muted">Nog geen klassen. Maak een klas, koppel er docenten aan en zet studenten erin (bij Accounts).</p>`}
+    ${docenten.filter(d => d.role === 'docent').length ? '' : `<p class="small muted">Er zijn nog geen docenten. Docenten vragen toegang aan via het inlogscherm ("Ik ben docent"), of je maakt ze hieronder aan met de rol Docent.</p>`}</section>`;
 }
 
 /* ================= gebeurtenissen ================= */
@@ -1514,7 +1840,7 @@ document.addEventListener('click', async e => {
   if (a === 'tab') { if (d.tab !== 'gesprek') { stopSpeaking(); stopListening(); } S.tab = d.tab; S.confirm = null; if (d.tab === 'vakken') S.openVak = null; render(); window.scrollTo(0, 0); return; }
   if (a === 'pick') { const s = S.sel[d.key]; s.has(d.id) ? s.delete(d.id) : s.add(d.id); render(); return; }
   if (a === 'pickvak') { const s = S.sel[d.key]; const ids = S.docs.filter(x => (x.vak_id || '') === d.vak).map(x => x.id); const all = ids.every(i => s.has(i)); ids.forEach(i => all ? s.delete(i) : s.add(i)); render(); return; }
-  if (a === 'seg') { const [obj, key] = d.group.split('.'); const t = obj === 'cards' ? S.cardsSet : S[obj]; t[key] = isNaN(+d.val) ? d.val : +d.val; render(); return; }
+  if (a === 'seg') { const parts = d.group.split('.'); let t = parts[0] === 'cards' ? S.cardsSet : S[parts[0]]; for (const p of parts.slice(1, -1)) t = t[p]; t[parts[parts.length - 1]] = isNaN(+d.val) ? d.val : +d.val; render(); return; }
   if (a === 'confirm') { S.confirm = d.key; render(); return; }
   if (a === 'cancel') { S.confirm = null; render(); return; }
   // vakken
@@ -1588,7 +1914,7 @@ document.addEventListener('click', async e => {
     S.tab = 'toets'; S.quiz.phase = 'setup'; render(); const f = $('#quizFocus'); if (f) f.value = weak.join(', '); return;
   }
   // oefentoets
-  if (a === 'quizgo') { await startQuiz([...S.sel.quiz], ($('#quizFocus') && $('#quizFocus').value.trim()) || ''); return; }
+  if (a === 'quizgo') { S.quiz.opdracht = null; await startQuiz([...S.sel.quiz], ($('#quizFocus') && $('#quizFocus').value.trim()) || ''); return; }
   if (a === 'mc') { S.quiz.answers[S.quiz.i] = +d.k; render(); return; }
   if (a === 'quiznext' || a === 'openans' || a === 'openskip') {
     const qz = S.quiz;
@@ -1597,7 +1923,7 @@ document.addEventListener('click', async e => {
     if (qz.i + 1 < qz.qs.length) { qz.i++; render(); } else await finishQuiz();
     return;
   }
-  if (a === 'quizstop' || a === 'quiznew') { S.quiz.phase = 'setup'; render(); return; }
+  if (a === 'quizstop' || a === 'quiznew') { S.quiz.phase = 'setup'; S.quiz.opdracht = null; render(); return; }
   if (a === 'quizweak') { const w = S.quiz.weak.join(', '); S.sel.quiz = new Set(S.quiz.docIds.filter(i => S.docs.some(x => x.id === i))); S.quiz.phase = 'setup'; render(); $('#quizFocus').value = w; return; }
   if (a === 'quizcards') {
     const qz = S.quiz;
@@ -1613,13 +1939,13 @@ document.addEventListener('click', async e => {
   if (a === 'studyend') { S.study = null; render(); return; }
   if (a === 'deckdel') { await q(sb.from('decks').delete().eq('id', d.id)); S.decks = S.decks.filter(x => x.id !== d.id); S.confirm = null; render(); toast('Set verwijderd.'); return; }
   // gesprek
-  if (a === 'chatgo') { unlockSpeech(); await startChat(); return; }
+  if (a === 'chatgo') { unlockSpeech(); S.chat.opdracht = null; await startChat(); return; }
   if (a === 'chatsend') { await sendChat(); return; }
   if (a === 'mic') { unlockSpeech(); if (V.listening) { stopListening(); } else startListening(false); return; }
   if (a === 'stopspeak') { stopSpeaking(); return; }
   if (a === 'chattip') { await chatTip(); return; }
   if (a === 'chatend') { stopSpeaking(); stopListening(); await endChat(); return; }
-  if (a === 'chatnew') { stopSpeaking(); stopListening(); Object.assign(S.chat, { phase: 'setup', msgs: [], over: null, geduld: null }); render(); return; }
+  if (a === 'chatnew') { stopSpeaking(); stopListening(); Object.assign(S.chat, { phase: 'setup', msgs: [], over: null, geduld: null, opdracht: null }); render(); return; }
   if (a === 'chatagain') { unlockSpeech(); stopSpeaking(); const c = S.chat; Object.assign(c, { phase: 'run', msgs: [c.msgs[0]], tips: {}, feedback: null, over: null, geduld: c.setupInfo && c.setupInfo.irritant ? 5 : null }); await chatTurn(); return; }
   // uitleg
   if (a === 'sum') { await summarize(d.kind); return; }
@@ -1628,9 +1954,25 @@ document.addEventListener('click', async e => {
   if (a === 'qaclear') { S.qa.msgs = []; render(); return; }
   // beheer
   if (a === 'adminreload') { S.admin.rows = null; render(); return; }
+  // klassen en opdrachten
+  if (a === 'share') { const v = d.v === '1'; await q(sb.rpc('set_delen', { p: v })); if (S.klas) S.klas.deelt_resultaten = v; toast(v ? 'Je docent kan nu je opdrachtresultaten zien.' : 'Je docent ziet je resultaten niet.'); render(); return; }
+  if (a === 'opdrstart') { await startOpdracht(d.id); return; }
+  if (a === 'klassel') { S.T.sel = d.id; if (d.go) S.tab = 'klassen'; S.confirm = null; render(); window.scrollTo(0, 0); return; }
+  if (a === 'klasreload') { setBusy('Vernieuwen…'); try { await loadKlasData(); S.T.leerlingen = {}; S.T.res = {}; } finally { setBusy(null); } return; }
+  if (a === 'kpaste') { const t = $('#kText'); if (!t.value.trim()) { toast('Plak eerst de lesstof in het vak.'); return; } const vk = ($('#kVak').value.trim()) || 'Algemeen'; S.T.vak = vk; setBusy('Lesstof delen…'); try { if (await addKlasDoc({ klasId: S.T.sel, vak: vk, title: $('#kTitle').value.trim() || `Lesstof ${fmtDate(Date.now())}`, text: t.value, source: 'geplakt' })) { t.value = ''; $('#kTitle').value = ''; } } finally { setBusy(null); } return; }
+  if (a === 'kdocdel') { const doc = S.kdocs.find(x => x.id === d.id); await q(sb.from('klas_docs').delete().eq('id', d.id)); if (doc && doc.file_path) sb.storage.from('klasstof').remove([doc.file_path]); S.kdocs = S.kdocs.filter(x => x.id !== d.id); S.confirm = null; render(); toast('Lesstof verwijderd.'); return; }
+  if (a === 'kdocfile') { const w = window.open('', '_blank'); const doc = S.kdocs.find(x => x.id === d.id); const { data, error } = await sb.storage.from('klasstof').createSignedUrl(doc.file_path, 120); if (error) { if (w) w.close(); toast('Het originele bestand kon niet geopend worden.'); return; } if (w) w.location = data.signedUrl; else location.href = data.signedUrl; return; }
+  if (a === 'opdpick') { const s = S.T.pick; s.has(d.id) ? s.delete(d.id) : s.add(d.id); render(); return; }
+  if (a === 'opdsave') { await saveOpdracht(); return; }
+  if (a === 'opdres') { S.T.openOpd = S.T.openOpd === d.id ? null : d.id; render(); return; }
+  if (a === 'opddel') { await q(sb.from('opdrachten').delete().eq('id', d.id)); S.opdr = S.opdr.filter(o => o.id !== d.id); S.confirm = null; render(); toast('Opdracht verwijderd.'); return; }
+  if (a === 'klasadd') { const naam = $('#kNaam').value.trim(); if (!naam) { toast('Geef de klas een naam.'); return; } await q(sb.from('klassen').insert({ naam, school: $('#kSchool').value.trim() })); $('#kNaam').value = ''; await loadAdminKlassen(); await loadKlasData(); render(); toast(`Klas ${naam} aangemaakt. Koppel nu een docent.`); return; }
+  if (a === 'klasdel') { await q(sb.from('klassen').delete().eq('id', d.id)); S.confirm = null; await loadAdminKlassen(); await loadKlasData(); S.admin.rows = null; render(); toast('Klas verwijderd.'); return; }
+  if (a === 'klasunlink') { await q(sb.from('klas_docenten').delete().eq('klas_id', d.klas).eq('docent_email', d.email)); await loadAdminKlassen(); await loadKlasData(); render(); toast('Docent ontkoppeld.'); return; }
   if (a === 'reqapprove') {
     const r = (S.admin.reqs || []).find(x => x.id === d.id); setBusy(`Account aanmaken voor ${r ? r.name : ''}…`);
-    try { const res = await adminFn({ action: 'approve', id: d.id, sendMail: true }); toast(res.existed ? 'Deze persoon had al een account; de aanvraag is afgesloten.' : `Goedgekeurd${res.mailed ? ' en welkomstmail verstuurd' : ''}.`); S.admin.rows = null; }
+    const ksel = $('#reqKlas-' + d.id); const klassen = [...document.querySelectorAll(`[data-reqklas="${d.id}"]:checked`)].map(x => x.value);
+    try { const res = await adminFn({ action: 'approve', id: d.id, sendMail: true, klas_id: ksel ? ksel.value || null : null, klassen }); toast(res.existed ? 'Deze persoon had al een account; de aanvraag is afgesloten.' : `Goedgekeurd${res.mailed ? ' en welkomstmail verstuurd' : ''}.`); S.admin.rows = null; }
     catch (err) { toast('Goedkeuren lukte niet: ' + (err.error === 'handled' ? 'deze aanvraag is al behandeld.' : (err.error || 'fout') + (err.message ? ' – ' + err.message : '')), 8000); await loadRequests(); }
     finally { setBusy(null); }
     return;
@@ -1664,6 +2006,9 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset && t.dataset.photo) { const files = [...(t.files || [])]; t.value = ''; if (files.length) { const ti = $('#phTitle'); if (ti) S.phTitle = ti.value; const pv = $('#phVak'); if (pv) S.phVak = pv.value; await addPhotos(files); render(); } return; }
   if (t.id === 'phVak') { S.phVak = t.value; return; }
+  if (t.dataset && t.dataset.linksel) { if (!t.value) return; try { await q(sb.from('klas_docenten').insert({ klas_id: t.dataset.linksel, docent_email: t.value })); await loadAdminKlassen(); await loadKlasData(); toast('Docent gekoppeld aan de klas.'); render(); } catch (err) { dbErr(err); } return; }
+  if (t.dataset && t.dataset.klasof) { try { await q(sb.from('accounts').update({ klas_id: t.value || null }).eq('email', t.dataset.klasof)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.klasof); if (r) r.klas_id = t.value || null; await loadAdminKlassen(); toast(t.value ? `In klas ${klasNaam(t.value)} gezet.` : 'Uit de klas gehaald.'); render(); } catch (err) { dbErr(err); } return; }
+  if (t.dataset && t.dataset.rolesel) { try { await q(sb.from('accounts').update({ role: t.value }).eq('email', t.dataset.rolesel)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.rolesel); if (r) r.role = t.value; toast('Rol aangepast.'); render(); } catch (err) { dbErr(err); toast('Rol aanpassen lukte niet. Is docenten.sql al gedraaid?', 7000); } return; }
   if (t.id === 'vRead') { S.chat.read = t.checked; if (!t.checked) stopSpeaking(); else unlockSpeech(); savePrefs(); return; }
   if (t.id === 'vHands') { S.chat.hands = t.checked; if (t.checked) { S.chat.read = true; unlockSpeech(); } else stopListening(); savePrefs(); render(); return; }
   if (t.dataset && t.dataset.move) {
