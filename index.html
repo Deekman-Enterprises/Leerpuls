@@ -638,13 +638,23 @@ function aiErr(e) {
     paused: 'Je account is gepauzeerd door de beheerder.',
     too_large: 'Te veel stof in één keer. Kies minder documenten.',
     invalid_json: 'De AI gaf een antwoord dat niet te lezen was. Probeer het nog een keer.',
-    unauthorized: 'Je sessie is verlopen. Log opnieuw in.',
+    unauthorized: 'Je inlogsessie is verlopen. Ga naar Account, log uit en log opnieuw in.',
     network: 'Geen verbinding met de AI. Controleer je internet en probeer het opnieuw.'
   };
   toast(m[c] || 'De AI gaf een fout. Probeer het opnieuw.', 7000);
 }
-async function callAI({ kind, system, messages, prompt, images, tier, max_tokens, onText }) {
-  const { data: { session } } = await sb.auth.getSession();
+// verse inlogsessie: na lang in de achtergrond (telefoon) kan de opgeslagen sessie verlopen zijn
+async function freshSession(force) {
+  let { data: { session } } = await sb.auth.getSession();
+  const bijnaVerlopen = session && session.expires_at && session.expires_at * 1000 < Date.now() + 60000;
+  if (force || !session || bijnaVerlopen) {
+    try { const r = await sb.auth.refreshSession(); if (r.data && r.data.session) session = r.data.session; } catch (e) { console.error('refresh', e); }
+  }
+  return session;
+}
+async function callAI(opts, retried) {
+  const { kind, system, messages, prompt, images, tier, max_tokens, onText } = opts;
+  const session = await freshSession(!!retried);
   if (!session) throw { code: 'unauthorized' };
   let res;
   try {
@@ -654,7 +664,11 @@ async function callAI({ kind, system, messages, prompt, images, tier, max_tokens
       body: JSON.stringify({ kind, system, messages: messages || [{ role: 'user', content: prompt }], images, tier, max_tokens, stream: !!onText })
     });
   } catch { throw { code: 'network' }; }
-  if (!res.ok) { const j = await res.json().catch(() => ({})); throw { code: j.error || 'upstream', limit: j.limit }; }
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    if (res.status === 401 && !retried) return callAI(opts, true); // sessie vernieuwen en één keer opnieuw proberen
+    throw { code: j.error || 'upstream', limit: j.limit };
+  }
   const rem = res.headers.get('x-ai-remaining');
   if (rem != null && !S.ai.unlimited) S.ai.used = Math.max(0, S.ai.limit - Number(rem));
   if (!onText) { const j = await res.json(); return j.text || ''; }
