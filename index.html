@@ -265,6 +265,8 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .seats i{display:block;height:100%;background:var(--good)}.seats i.vol{background:var(--bad)}
 .danger-link{color:var(--bad)}
 .ktnew{border-color:var(--hl);box-shadow:inset 4px 0 0 var(--hl)}
+.sendcd{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;background:var(--warn-bg);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;font-size:.95rem}
+.sendcd b{font-size:1.15rem}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
 .check input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--ink)}
@@ -1265,8 +1267,8 @@ const VP0 = (() => { try { return JSON.parse(localStorage.getItem('lp_voice') ||
 const V = { canListen: !!SR, canSpeak: 'speechSynthesis' in window, listening: false, rec: null, final: '', interim: '', speaking: false, voice: null, unlocked: false,
   audio: null, audioUnlocked: false, seq: 0, endCb: null, ttsOff: '', urls: [] };
 const STEMMEN = { fenna: 'Fenna (vrouw)', maarten: 'Maarten (man)', colette: 'Colette (vrouw)', browser: 'Browserstem (eenvoudig)' };
-Object.assign(S.chat, { read: !!VP0.read, hands: !!VP0.hands, stem: STEMMEN[VP0.stem] ? VP0.stem : 'fenna' });
-function savePrefs() { try { localStorage.setItem('lp_voice', JSON.stringify({ read: S.chat.read, hands: S.chat.hands, stem: S.chat.stem })); } catch {} }
+Object.assign(S.chat, { read: !!VP0.read, hands: !!VP0.hands, stem: STEMMEN[VP0.stem] ? VP0.stem : 'fenna', wacht: ['kort', 'normaal', 'lang'].includes(VP0.wacht) ? VP0.wacht : 'normaal' });
+function savePrefs() { try { localStorage.setItem('lp_voice', JSON.stringify({ read: S.chat.read, hands: S.chat.hands, stem: S.chat.stem, wacht: S.chat.wacht })); } catch {} }
 function pickVoice() {
   if (!V.canSpeak) return null;
   const vs = speechSynthesis.getVoices().filter(v => /^nl(-|_|$)/i.test(v.lang));
@@ -1404,41 +1406,90 @@ async function testStem() {
   if (S.chat.stem !== 'browser') V.ttsOff = '';
   speak(zin);
 }
+/* Spraakherkenning (browser). Verbeterd 29 okt 2026:
+   - langere, instelbare stilte voordat er iets wordt verstuurd + 2 tellen aftellen met "Wacht" / "Verstuur nu"
+   - Android herhaalde soms woorden (bekende fout bij doorlopend luisteren): tekst wordt nu samengevoegd i.p.v. opgestapeld
+   - iPhone stopt na elke pauze: de app luistert automatisch verder tot de stilte echt lang genoeg is */
+const WACHT = { kort: 2000, normaal: 3500, lang: 6000 };
+const WACHT_LABEL = { kort: 'Kort (2 s)', normaal: 'Normaal (3,5 s)', lang: 'Lang (6 s)' };
+const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function mergeSpeech(acc, t) {
+  acc = acc.trim(); t = t.trim(); if (!t) return acc; if (!acc) return t;
+  const a = acc.toLowerCase(), b = t.toLowerCase();
+  if (b.startsWith(a)) return t;            // Android: elk resultaat bevat alles wat al gezegd is
+  if (a.endsWith(b) || a.includes(b)) return acc;
+  // overlap: einde van acc = begin van t
+  const aw = acc.split(/\s+/), bw = t.split(/\s+/);
+  for (let k = Math.min(aw.length, bw.length, 8); k > 0; k--) {
+    if (aw.slice(-k).join(' ').toLowerCase() === bw.slice(0, k).join(' ').toLowerCase()) return acc + ' ' + bw.slice(k).join(' ');
+  }
+  return acc + ' ' + t;
+}
+function cancelCountdown() { if (V.cd) { clearInterval(V.cd.timer); V.cd = null; updateVoiceUi(); } }
+function startCountdown() {
+  cancelCountdown();
+  V.cd = { left: 2, timer: setInterval(() => {
+    if (!V.cd) return; V.cd.left--;
+    if (V.cd.left <= 0) { cancelCountdown(); const c = S.chat; if (c.phase === 'run' && !c.over && c.streaming == null && !S.busy) sendChat(); return; }
+    updateVoiceUi();
+  }, 1000) };
+  updateVoiceUi();
+}
 function startListening(auto) {
   if (!V.canListen || V.listening) return;
-  stopSpeaking();
-  const rec = new SR(); V.rec = rec;
-  rec.lang = 'nl-NL'; rec.interimResults = true; rec.continuous = !/iPhone|iPad|iPod/i.test(navigator.userAgent); rec.maxAlternatives = 1;
-  const box = $('#chatIn'); V.final = box && box.value.trim() ? box.value.trim() + ' ' : ''; V.interim = '';
-  let silence = null;
-  const armSilence = () => { clearTimeout(silence); silence = setTimeout(() => { try { rec.stop(); } catch {} }, S.chat.hands ? 1800 : 4000); };
-  rec.onresult = e => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) V.final += r[0].transcript.trim() + ' '; else interim += r[0].transcript; }
-    V.interim = interim; const b = $('#chatIn'); if (b) b.value = (V.final + interim).trim();
-    const lt = $('#liveTxt'); if (lt) lt.textContent = interim ? '… ' + interim : '';
-    armSilence();
+  stopSpeaking(); cancelCountdown();
+  const box = $('#chatIn');
+  const L = V.L = { base: box && box.value.trim() ? box.value.trim() + ' ' : '', done: '', cur: '', interim: '', last: Date.now(), heard: false, active: true, stopReq: false, auto, err: null, rec: null };
+  const waitMs = () => S.chat.hands ? (WACHT[S.chat.wacht] || WACHT.normaal) : 8000;
+  const text = () => (L.base + ' ' + mergeSpeech(mergeSpeech(L.done, L.cur), L.interim)).replace(/\s+/g, ' ').trim();
+  const show = () => { if (V.L !== L) return; const b = $('#chatIn'); if (b) b.value = text(); const lt = $('#liveTxt'); if (lt) lt.textContent = L.interim ? '… ' + L.interim : ''; };
+  const finish = () => {
+    if (V.L !== L || L.finished) return; L.finished = true;
+    clearInterval(L.timer); L.active = false; V.listening = false;
+    const t = text(); const b = $('#chatIn'); if (b) b.value = t; const lt = $('#liveTxt'); if (lt) lt.textContent = '';
+    updateVoiceUi();
+    const e = L.err;
+    if (!L.heard && !L.stopReq) {
+      if ((e === 'not-allowed' || e === 'service-not-allowed') && L.auto) toast('Tik op "Praat" om te antwoorden.');
+      else if (e === 'not-allowed' || e === 'service-not-allowed') toast('Leerpuls mag je microfoon niet gebruiken. Sta de microfoon toe bij de site-instellingen van je browser en probeer opnieuw.', 8000);
+      else if (e === 'network') toast('Spraakherkenning heeft internet nodig. Controleer je verbinding.');
+      else if (e === 'audio-capture') toast('Er is geen microfoon gevonden. Controleer je microfoon of typ je antwoord.', 7000);
+      else if (!L.auto) toast('Ik hoorde niets. Tik op de microfoon en praat iets dichter bij je telefoon.');
+      return;
+    }
+    if (L.stopReq) return; // zelf gestopt: tekst controleren en zelf versturen
+    const c = S.chat;
+    if (c.hands && t && c.phase === 'run' && !c.over && c.streaming == null && !S.busy) startCountdown();
   };
-  rec.onerror = e => {
-    V.listening = false; clearTimeout(silence); updateVoiceUi();
-    if ((e.error === 'not-allowed' || e.error === 'service-not-allowed') && auto) toast('Tik op "Praat" om te antwoorden.');
-    else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Leerpuls mag je microfoon niet gebruiken. Sta de microfoon toe bij de site-instellingen van je browser en probeer opnieuw.', 8000);
-    else if (e.error === 'no-speech' && auto) { /* stil: student kan opnieuw tikken */ }
-    else if (e.error === 'no-speech') toast('Ik hoorde niets. Tik op de microfoon en praat iets dichter bij je telefoon.');
-    else if (e.error === 'network') toast('Spraakherkenning heeft internet nodig. Controleer je verbinding.');
-    else if (e.error !== 'aborted') toast('Spraakherkenning stopte onverwacht. Probeer het opnieuw of typ je antwoord.');
+  const newRec = () => {
+    const rec = new SR(); L.rec = V.rec = rec;
+    rec.lang = 'nl-NL'; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = !IS_IOS;
+    rec.onresult = e => {
+      let fin = '', interim = '';
+      for (let i = 0; i < e.results.length; i++) { const r = e.results[i]; const tr = (r[0] && r[0].transcript || '').trim(); if (!tr) continue; if (r.isFinal) fin = mergeSpeech(fin, tr); else interim = mergeSpeech(interim, tr); }
+      L.cur = fin; L.interim = interim; L.last = Date.now(); L.heard = true; show();
+    };
+    rec.onerror = e => { if (e.error !== 'aborted' && e.error !== 'no-speech') L.err = e.error; };
+    rec.onend = () => {
+      L.done = mergeSpeech(L.done, L.cur || L.interim); L.cur = ''; L.interim = '';
+      const fatal = ['not-allowed', 'service-not-allowed', 'network', 'audio-capture'].includes(L.err);
+      const limit = L.heard ? waitMs() : 8000;
+      if (L.active && !L.stopReq && !fatal && Date.now() - L.last < limit) { try { newRec().start(); return; } catch (err) { /* valt door naar afronden */ } }
+      finish();
+    };
+    return rec;
   };
-  rec.onend = () => {
-    clearTimeout(silence); const was = V.listening; V.listening = false; updateVoiceUi();
-    const b = $('#chatIn'); if (b) b.value = (V.final + V.interim).trim();
-    if (was && S.chat.hands && b && b.value.trim() && S.chat.phase === 'run' && !S.chat.over && S.chat.streaming == null && !S.busy) sendChat();
-  };
-  try { rec.start(); V.listening = true; armSilence(); updateVoiceUi(); }
-  catch (e) { V.listening = false; updateVoiceUi(); }
+  L.timer = setInterval(() => {
+    const limit = L.heard ? waitMs() : 8000;
+    if (L.active && Date.now() - L.last > limit) { L.active = false; try { L.rec.stop(); } catch { finish(); } }
+  }, 250);
+  V.listening = true; updateVoiceUi();
+  try { newRec().start(); } catch (e) { L.err = 'start'; finish(); }
 }
-function stopListening() { if (V.rec) { try { V.rec.stop(); } catch {} } }
+function stopListening() { const L = V.L; if (L && V.listening) { L.stopReq = true; L.active = false; try { L.rec.stop(); } catch {} } cancelCountdown(); }
 function updateVoiceUi() {
   const m = $('#micBtn'); if (m) { m.classList.toggle('on', V.listening); m.querySelector('span').textContent = V.listening ? 'Ik luister… (tik om te stoppen)' : 'Praat'; m.setAttribute('aria-pressed', V.listening); }
+  const cd = $('#sendCd'); if (cd) { cd.hidden = !V.cd; if (V.cd) cd.querySelector('b').textContent = V.cd.left; }
   const sp = $('#speakingNow'); if (sp) sp.hidden = !V.speaking;
 }
 const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
@@ -1449,6 +1500,7 @@ function voiceControls() {
     <label class="stemkeuze">Stem <select id="vStem" aria-label="Stem van je gesprekspartner">${Object.entries(STEMMEN).filter(([k]) => k !== 'browser' || V.canSpeak).map(([k, t]) => `<option value="${k}" ${c.stem === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
     <button class="link small" data-act="teststem" type="button">▶︎ Luister</button>
     ${V.canListen ? `<label><input type="checkbox" id="vHands" ${c.hands ? 'checked' : ''}> 🎙️ Spreekmodus (handsfree)</label>` : ''}
+    ${V.canListen && c.hands ? `<label>Versturen na stilte van <select id="vWacht" aria-label="Hoe lang stil voordat je antwoord wordt verstuurd">${Object.entries(WACHT_LABEL).map(([k, l]) => `<option value="${k}" ${c.wacht === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : ''}
     <span class="speaking" id="speakingNow" ${V.speaking ? '' : 'hidden'}>🔊 Aan het praten… <button class="link small" data-act="stopspeak">Stop</button></span></div>`;
 }
 const TAG_RE = /\[(GEDULD|DEAL|WEG)[^\]]*\]/gi;
@@ -1479,7 +1531,9 @@ function vGesprek() {
     const lock = S.busy || c.streaming != null;
     if (c.phase === 'run' && c.over) h += `<div class="row"><button class="btn hl" data-act="chatend" ${lock ? 'disabled' : ''}>Bekijk je feedback</button><button class="btn ghost" data-act="chatagain" ${lock ? 'disabled' : ''}>Probeer opnieuw</button></div>`;
     else if (c.phase === 'run') h += `${voiceControls()}
-      ${V.canListen ? `<div class="talkrow"><button class="mic ${V.listening ? 'on' : ''}" id="micBtn" data-act="mic" aria-pressed="${V.listening}" ${lock ? 'disabled' : ''}>${ICON_MIC}<span>${V.listening ? 'Ik luister… (tik om te stoppen)' : 'Praat'}</span></button><span class="small muted">${c.hands ? 'Praat gewoon; na een korte stilte wordt je antwoord verstuurd.' : 'Tik, praat, tik weer. Controleer de tekst en verstuur.'}</span></div><div class="livetxt" id="liveTxt"></div>` : `<p class="small muted">Praten werkt niet in deze browser. Gebruik de microfoon op je toetsenbord, of open Leerpuls in Chrome of Safari.</p>`}
+      ${V.canListen ? `<div class="talkrow"><button class="mic ${V.listening ? 'on' : ''}" id="micBtn" data-act="mic" aria-pressed="${V.listening}" ${lock ? 'disabled' : ''}>${ICON_MIC}<span>${V.listening ? 'Ik luister… (tik om te stoppen)' : 'Praat'}</span></button><span class="small muted">${c.hands ? `Praat gewoon en rustig. Ben je ${WACHT[c.wacht] / 1000 >= 6 ? '6' : String(WACHT[c.wacht] / 1000).replace('.', ',')} seconden stil, dan wordt je antwoord verstuurd; je kunt dat nog tegenhouden.` : 'Tik, praat, tik weer. Controleer de tekst en verstuur.'}</span></div>
+      <div class="sendcd" id="sendCd" ${V.cd ? '' : 'hidden'} role="status"><span>Versturen over <b>${V.cd ? V.cd.left : 2}</b>…</span><button class="btn sm" data-act="cdnow">Verstuur nu</button><button class="btn sm ghost" data-act="cdwait">Wacht, ik ben nog niet klaar</button></div>
+      <div class="livetxt" id="liveTxt"></div>` : `<p class="small muted">Praten werkt niet in deze browser. Gebruik de microfoon op je toetsenbord, of open Leerpuls in Chrome of Safari.</p>`}
       <label class="field"><span>Jouw antwoord</span><textarea id="chatIn" placeholder="${V.canListen ? 'Praat met de knop hierboven, of typ je antwoord.' : 'Antwoord zoals je het in het echt zou zeggen.'} Enter = versturen, Shift+Enter = nieuwe regel"></textarea></label>
       <div class="row"><button class="btn" data-act="chatsend" ${lock ? 'disabled' : ''}>Verstuur</button><button class="btn ghost" data-act="chattip" ${lock ? 'disabled' : ''}>Geef een tip</button><button class="btn hl" data-act="chatend" ${lock || c.msgs.length < 4 ? 'disabled' : ''}>Rond af en krijg feedback</button></div>`;
     h += `</section>`;
@@ -1712,7 +1766,7 @@ let scrollChat = false;
 function render() {
   const root = $('#app'); if (root.hidden) return;
   const keep = {};
-  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'vStem' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'vStem' && el.id !== 'vWacht' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
   const act = document.activeElement; const fid = act && root.contains(act) && act.id;
   let ss, se; try { ss = act.selectionStart; se = act.selectionEnd; } catch {}
   const openDetails = [...root.querySelectorAll('details')].map(d => d.open);
@@ -1899,8 +1953,8 @@ async function startChat(cfg) {
   await chatTurn();
 }
 async function sendChat() {
-  unlockSpeech();
-  if (V.listening) { V.listening = false; stopListening(); }
+  unlockSpeech(); cancelCountdown();
+  if (V.listening) stopListening();
   stopSpeaking();
   const el = $('#chatIn'); const t = el && el.value.trim(); if (!t) return;
   el.value = ''; V.final = ''; V.interim = ''; S.chat.msgs.push({ role: 'user', content: t }); await chatTurn();
@@ -2674,6 +2728,8 @@ document.addEventListener('click', async e => {
   if (a === 'chatgo') { unlockSpeech(); S.chat.opdracht = null; await startChat(); return; }
   if (a === 'chatsend') { await sendChat(); return; }
   if (a === 'mic') { unlockSpeech(); if (V.listening) { stopListening(); } else startListening(false); return; }
+  if (a === 'cdnow') { cancelCountdown(); await sendChat(); return; }
+  if (a === 'cdwait') { cancelCountdown(); startListening(false); toast('Ga verder met praten. Tik op de microfoon als je klaar bent, of wacht op de stilte.'); return; }
   if (a === 'stopspeak') { stopSpeaking(); return; }
   if (a === 'sbreload') { S.SB = null; S.SBerr = null; render(); return; }
   if (a === 'sbtoelaten') { setBusy('Studenten toelaten…'); try { const r = await adminFn({ action: 'schooltoelaten' }); toast(`${plural(r.toegelaten, 'student', 'studenten')} toegelaten. Ze krijgen een mail.`); } catch (err) { toast('Toelaten lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); S.SB = null; render(); } return; }
@@ -2828,6 +2884,7 @@ document.addEventListener('change', async e => {
   if (t.dataset && t.dataset.klasgratis) { try { await q(sb.from('klassen').update({ gratis: t.checked }).eq('id', t.dataset.klasgratis)); toast(t.checked ? 'Deze klas is nu gratis.' : 'Deze klas is niet meer gratis.'); S.admin.rows = null; loadAdmin(); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
   if (t.id === 'vStem') { S.chat.stem = t.value; V.ttsOff = ''; stopSpeaking(); savePrefs(); testStem(); return; }
   if (t.id === 'vRead') { S.chat.read = t.checked; if (!t.checked) stopSpeaking(); else unlockSpeech(); savePrefs(); return; }
+  if (t.id === 'vWacht') { S.chat.wacht = t.value; savePrefs(); render(); return; }
   if (t.id === 'vHands') { S.chat.hands = t.checked; if (t.checked) { S.chat.read = true; unlockSpeech(); } else stopListening(); savePrefs(); render(); return; }
   if (t.dataset && t.dataset.move) {
     const id = t.dataset.move; const vak_id = t.value || null;
@@ -2840,6 +2897,7 @@ document.addEventListener('change', async e => {
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'phTitle') S.phTitle = e.target.value;
+  if (e.target.id === 'chatIn' && V.cd) cancelCountdown();
   if (e.target.dataset && e.target.dataset.filter === 'sb') { S.SBfilter = e.target.value; render(); return; }
   if (e.target.dataset && e.target.dataset.filter) { S.admin.filter = e.target.value; render(); }
 });
