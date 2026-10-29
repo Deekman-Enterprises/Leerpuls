@@ -254,9 +254,18 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .speaking{font-size:.85rem;color:var(--muted);display:flex;gap:8px;align-items:center}
 @media (prefers-reduced-motion: reduce){.mic.on{animation:none}}
 .reqcta{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.price{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.price .big{font-family:var(--f-display,inherit);font-weight:800;font-size:2.2rem;line-height:1}
+.price .small{flex-basis:100%}
+.benefits{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.fs{border:1px solid var(--line);border-radius:var(--r);padding:10px 14px 14px;margin:0;display:grid;gap:10px;min-width:0}
+.fs legend{font-weight:700;padding:0 6px;font-size:.95rem}
+.kv{display:grid;gap:2px}
+.seats{height:8px;background:var(--line);border-radius:8px;overflow:hidden;margin:6px 0 2px;max-width:320px}
+.seats i{display:block;height:100%;background:var(--good)}.seats i.vol{background:var(--bad)}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
-.check input{margin-top:3px}
+.check input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--ink)}
 .req{display:grid;gap:6px;padding:14px 0;border-bottom:1px solid var(--line)}
 .req:first-child{padding-top:0}
 .req .quote{background:var(--paper);border-radius:8px;padding:10px 12px;font-size:.92rem;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -389,6 +398,16 @@ const S = {
 const G = { step: 'email', email: '', msg: '', err: '', busy: false, resendAt: 0, reason: '', rq: {}, noAccount: false, canRequest: false };
 
 /* ================= inloggen ================= */
+const gv = id => { const el = $('#' + id); return el ? (el.type === 'checkbox' ? el.checked : el.value.trim()) : undefined; };
+function readRq() {
+  const r = G.rq || {}; const pick = (id, k, o) => { const v = gv(id); if (v !== undefined) o[k] = v; };
+  const o = {}; pick('rqName', 'name', o); pick('rqEmail', 'email', o); pick('rqOpl', 'opleiding', o); pick('rqGroep', 'groep', o); pick('rqMot', 'motivatie', o); pick('rqOk', 'akkoord', o);
+  if (o.email) o.email = o.email.toLowerCase();
+  const sc = { ...(r.school || {}) };
+  [['scNaam', 'naam'], ['scKvk', 'kvk'], ['scBtw', 'btw'], ['scAdres', 'adres'], ['scPostcode', 'postcode'], ['scPlaats', 'plaats'], ['scFunctie', 'functie'], ['scTel', 'tel'], ['scFactuur', 'factuur_email'], ['scDomein', 'domeinen'], ['scStud', 'studenten'], ['scDoc', 'docenten'], ['scStart', 'startdatum']].forEach(([id, k]) => pick(id, k, sc));
+  return { ...r, ...o, school: sc };
+}
+async function schoolCheck(email) { try { const r = await publicFn({ action: 'schoolcheck', email }); return r.school || null; } catch { return null; } }
 function authErr(e) {
   const m = (e && e.message || '').toLowerCase();
   if (m.includes('signups not allowed') || m.includes('user not found')) { G.noAccount = true; return 'Dit e-mailadres heeft nog geen Leerpuls-account. Vraag hieronder toegang aan.'; }
@@ -399,6 +418,52 @@ function authErr(e) {
   if (m.includes('same password') || m.includes('different from the old')) return 'Kies een ander wachtwoord dan je huidige.';
   return 'Er ging iets mis. Probeer het opnieuw.';
 }
+/* ---- abonnementen (Mollie, Edge Function "Betalingen") ---- */
+const ABO = { info: null };
+let payReturn = /[?&]betaling=klaar/.test(location.search);
+if (payReturn) { try { history.replaceState(null, '', location.pathname); } catch {} }
+async function payFn(body, auth) {
+  const headers = { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_KEY, Authorization: `Bearer ${CFG.SUPABASE_KEY}` };
+  if (auth) { const { data: { session } } = await sb.auth.getSession(); if (!session) throw { error: 'unauthorized' }; headers.Authorization = `Bearer ${session.access_token}`; }
+  let res;
+  try { res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.PAY_FUNCTION || 'Betalingen'}`, { method: 'POST', headers, body: JSON.stringify(body) }); }
+  catch { throw { error: 'network' }; }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw { error: j.error || (res.status === 404 ? 'no_function' : 'HTTP ' + res.status), message: j.message || '' };
+  return j;
+}
+async function loadAboInfo() {
+  if (!CONFIG_OK || ABO.info) return ABO.info;
+  try { ABO.info = await payFn({ action: 'info' }); } catch { ABO.info = { beschikbaar: false }; }
+  return ABO.info;
+}
+const aboOn = () => !!(ABO.info && ABO.info.beschikbaar);
+const prijsTxt = () => ABO.info && ABO.info.prijs ? '€ ' + String(ABO.info.prijs).replace('.', ',') : '';
+const fmtLong = iso => iso ? new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+async function myToegang() {
+  try { const { data, error } = await sb.rpc('mijn_toegang'); if (error || !data) return null; return data; } catch { return null; }
+}
+const PAY_ERR = {
+  has_account: 'Dit e-mailadres heeft al een account. Ga terug en log in met een code.',
+  not_available: 'Aanmelden met een abonnement is op dit moment niet mogelijk. Probeer het later opnieuw.',
+  no_function: 'Aanmelden is nog niet ingesteld (functie "Betalingen" ontbreekt).',
+  busy: 'Er melden zich nu veel mensen aan. Probeer het over een uur opnieuw.',
+  bad_email: 'Vul een geldig e-mailadres in.', bad_name: 'Vul je voor- en achternaam in.',
+  no_consent: 'Vink aan dat je akkoord gaat.', network: 'Geen verbinding. Controleer je internet en probeer het opnieuw.',
+  unauthorized: 'Je sessie is verlopen. Log opnieuw in.'
+};
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function waitForPayment() {
+  showGate('verwerken');
+  for (let i = 0; i < 18; i++) {
+    await sleep(i < 6 ? 1500 : 3000);
+    const t = await myToegang();
+    if (t && t.toegang) { started = false; await start(false); toast('Betaling gelukt! Welkom bij Leerpuls 🎉', 7000); return; }
+    if (t && t.abo_status === 'geen' && i >= 1) break; // betaling geannuleerd of mislukt
+  }
+  showGate('betalen', { toe: await myToegang(), payFailed: true });
+}
+
 /* ---- app op beginscherm (installeerbaar, PWA) ---- */
 const UA = navigator.userAgent || '';
 const INST = {
@@ -447,26 +512,84 @@ document.addEventListener('click', async e => {
 
 function renderGate() {
   const g = G; let body = '';
+  const ge = $('#gEmail'); if (ge && g.step === 'email') g.email = ge.value;
   const err = g.err ? `<p class="err" role="alert">${esc(g.err)}</p>` : '';
   const msg = g.msg ? `<p class="ok">${esc(g.msg)}</p>` : '';
   if (g.step === 'email') body = `<h2>Inloggen</h2><p class="muted small">Vul je e-mailadres in. We sturen je een inlogcode.</p>
     <form id="fEmail" class="stack"><label class="field"><span>E-mailadres</span><input id="gEmail" type="email" autocomplete="email" required value="${esc(g.email)}"></label>${err}${msg}
     <button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Code versturen…' : 'Stuur inlogcode'}</button></form>
     <button class="link" data-gate="password">Inloggen met wachtwoord</button>
-    <div class="reqcta"><span class="small muted">Nog geen account?</span><button class="btn ${g.noAccount ? 'hl' : 'ghost'} wide" data-gate="request">Toegang aanvragen</button></div>
+    ${aboOn() ? `<div class="reqcta"><span class="small muted">Nog geen account?</span><button class="btn hl wide" data-gate="signup">Account aanmaken · ${prijsTxt()} per maand</button><button class="link small" data-gate="request">In een klas met gratis toegang of docent? Vraag toegang aan</button></div>`
+      : `<div class="reqcta"><span class="small muted">Nog geen account?</span><button class="btn ${g.noAccount ? 'hl' : 'ghost'} wide" data-gate="request">Toegang aanvragen</button></div>`}
     ${INST.mobile && !isStandalone() ? `<div class="gateinst">${INST.evt ? `<button class="link" data-inst="go">📲 Installeer Leerpuls als app</button>` : `<button class="link" data-inst="go" aria-expanded="${INST.open}">📲 Leerpuls op je beginscherm zetten</button>${INST.open ? `${INST.ios ? `<p class="small muted">Tip: doe dit vóór je inlogt, dan log je meteen in de app in.</p>` : ''}${installSteps(true)}` : ''}`}</div>` : ''}`;
-  if (g.step === 'request') body = `<h2>Toegang aanvragen</h2><p class="muted small">Vul je gegevens in. Je krijgt een mail zodra je aanvraag is goedgekeurd; daarna log je in met een code.</p>
+  if (g.step === 'request') { const isSchool = g.rq.type === 'school', isDoc = g.rq.type === 'docent'; const sc = g.rq.school || {};
+    body = `<h2>Toegang aanvragen</h2><p class="muted small">${isSchool ? 'Wil je Leerpuls voor je school of opleiding? Vul de gegevens van de school in. We nemen contact op over de afspraken en de prijs; na goedkeuring kunnen alle studenten met hun schoolmail direct inloggen.' : 'Vul je gegevens in. Je krijgt een mail zodra je aanvraag is goedgekeurd; daarna log je in met een code.'}</p>
     <form id="fRequest" class="stack" novalidate>
-      <div class="field"><span>Ik ben</span><div class="seg" role="group"><button type="button" data-gate="rqtype" data-v="student" aria-pressed="${(g.rq.type || 'student') === 'student'}">Student</button><button type="button" data-gate="rqtype" data-v="docent" aria-pressed="${g.rq.type === 'docent'}">Docent</button></div></div>
+      <div class="field"><span>Ik ben</span><div class="seg" role="group"><button type="button" data-gate="rqtype" data-v="student" aria-pressed="${!isSchool && !isDoc}">Student</button><button type="button" data-gate="rqtype" data-v="docent" aria-pressed="${isDoc}">Docent</button><button type="button" data-gate="rqtype" data-v="school" aria-pressed="${isSchool}">School</button></div></div>
+      ${isSchool ? `
+      <fieldset class="fs"><legend>De school</legend>
+        <label class="field"><span>Naam school of opleiding</span><input id="scNaam" maxlength="120" required placeholder="bijv. Hogeschool Leiden" value="${esc(sc.naam || '')}"></label>
+        <div class="fields"><label class="field"><span>KvK-nummer</span><input id="scKvk" inputmode="numeric" maxlength="12" required placeholder="8 cijfers" value="${esc(sc.kvk || '')}"></label>
+        <label class="field"><span>Btw-nummer (als je dat hebt)</span><input id="scBtw" maxlength="20" placeholder="bijv. NL123456789B01" value="${esc(sc.btw || '')}"></label></div>
+        <label class="field"><span>Adres</span><input id="scAdres" maxlength="120" required autocomplete="street-address" value="${esc(sc.adres || '')}"></label>
+        <div class="fields"><label class="field"><span>Postcode</span><input id="scPostcode" maxlength="10" autocomplete="postal-code" value="${esc(sc.postcode || '')}"></label>
+        <label class="field"><span>Plaats</span><input id="scPlaats" maxlength="60" required value="${esc(sc.plaats || '')}"></label></div>
+      </fieldset>
+      <fieldset class="fs"><legend>Contactpersoon</legend>
+        <div class="fields"><label class="field"><span>Voor- en achternaam</span><input id="rqName" autocomplete="name" required maxlength="80" value="${esc(g.rq.name || '')}"></label>
+        <label class="field"><span>Functie</span><input id="scFunctie" maxlength="80" placeholder="bijv. opleidingscoördinator" value="${esc(sc.functie || '')}"></label></div>
+        <div class="fields"><label class="field"><span>E-mailadres</span><input id="rqEmail" type="email" autocomplete="email" required value="${esc(g.rq.email || g.email || '')}"></label>
+        <label class="field"><span>Telefoonnummer</span><input id="scTel" type="tel" maxlength="30" autocomplete="tel" value="${esc(sc.tel || '')}"></label></div>
+        <label class="field"><span>E-mailadres voor facturen (als dat anders is)</span><input id="scFactuur" type="email" placeholder="bijv. crediteuren@school.nl" value="${esc(sc.factuur_email || '')}"></label>
+      </fieldset>
+      <fieldset class="fs"><legend>Gebruik</legend>
+        <label class="field"><span>E-maildomein van de studenten</span><input id="scDomein" maxlength="200" required placeholder="bijv. hsleiden.nl of student.hsleiden.nl" value="${esc(sc.domeinen || '')}"><small class="muted">Studenten met een adres op dit domein kunnen straks direct inloggen. Meerdere? Scheid ze met een komma.</small></label>
+        <div class="fields"><label class="field"><span>Verwacht aantal studenten</span><input id="scStud" type="number" min="1" max="100000" required value="${esc(sc.studenten || '')}"></label>
+        <label class="field"><span>Verwacht aantal docenten</span><input id="scDoc" type="number" min="0" max="10000" value="${esc(sc.docenten || '')}"></label>
+        <label class="field"><span>Gewenste startdatum</span><input id="scStart" type="date" value="${esc(sc.startdatum || '')}"></label></div>
+        <label class="field"><span>Opmerkingen of vragen (optioneel)</span><textarea id="rqMot" maxlength="1500" placeholder="bijv. voor welke opleidingen of vakken, of een proefperiode">${esc(g.rq.motivatie || '')}</textarea></label>
+      </fieldset>` : `
       <label class="field"><span>Voor- en achternaam</span><input id="rqName" autocomplete="name" required maxlength="80" value="${esc(g.rq.name || '')}"></label>
       <label class="field"><span>E-mailadres</span><input id="rqEmail" type="email" autocomplete="email" required value="${esc(g.rq.email || g.email || '')}"></label>
-      <label class="field"><span>${g.rq.type === 'docent' ? 'School en vakken die je geeft' : 'Opleiding en school'}</span><input id="rqOpl" maxlength="120" placeholder="${g.rq.type === 'docent' ? 'bijv. Hogeschool Leiden – Marketing en Verkoop' : 'bijv. Commerciële Economie, Hogeschool Leiden'}" value="${esc(g.rq.opleiding || '')}"></label>
-      <label class="field"><span>${g.rq.type === 'docent' ? 'Klassen waaraan je lesgeeft (optioneel)' : 'Klas of groep (optioneel)'}</span><input id="rqGroep" maxlength="60" placeholder="${g.rq.type === 'docent' ? 'bijv. CE1A, CE1B' : 'bijv. CE1A'}" value="${esc(g.rq.groep || '')}"></label>
-      <label class="field"><span>Waarvoor wil je Leerpuls gebruiken? (optioneel)</span><textarea id="rqMot" maxlength="1000" placeholder="bijv. oefenen voor mijn tentamens en verkoopgesprekken">${esc(g.rq.motivatie || '')}</textarea></label>
+      <label class="field"><span>${isDoc ? 'School en vakken die je geeft' : 'Opleiding en school'}</span><input id="rqOpl" maxlength="120" placeholder="${isDoc ? 'bijv. Hogeschool Leiden – Marketing en Verkoop' : 'bijv. Commerciële Economie, Hogeschool Leiden'}" value="${esc(g.rq.opleiding || '')}"></label>
+      <label class="field"><span>${isDoc ? 'Klassen waaraan je lesgeeft (optioneel)' : 'Klas of groep (optioneel)'}</span><input id="rqGroep" maxlength="60" placeholder="${isDoc ? 'bijv. CE1A, CE1B' : 'bijv. CE1A'}" value="${esc(g.rq.groep || '')}"></label>
+      <label class="field"><span>Waarvoor wil je Leerpuls gebruiken? (optioneel)</span><textarea id="rqMot" maxlength="1000" placeholder="bijv. oefenen voor mijn tentamens en verkoopgesprekken">${esc(g.rq.motivatie || '')}</textarea></label>`}
       <div class="hp" aria-hidden="true"><label>Website<input id="rqSite" tabindex="-1" autocomplete="off"></label></div>
-      <label class="check"><input type="checkbox" id="rqOk" ${g.rq.akkoord ? 'checked' : ''}><span>Ik ga akkoord dat Leerpuls mijn naam en e-mailadres bewaart om mijn aanvraag te behandelen.</span></label>
+      <label class="check"><input type="checkbox" id="rqOk" ${g.rq.akkoord ? 'checked' : ''}><span>${isSchool ? 'Ik ga akkoord dat Leerpuls deze gegevens bewaart om de aanvraag te behandelen en om contact op te nemen over afspraken en facturen.' : 'Ik ga akkoord dat Leerpuls mijn naam en e-mailadres bewaart om mijn aanvraag te behandelen.'}</span></label>
       ${err}<button class="btn wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Versturen…' : 'Verstuur aanvraag'}</button></form>
-    <button class="link" data-gate="email">← Terug naar inloggen</button>`;
+    <button class="link" data-gate="email">← Terug naar inloggen</button>`; }
+  if (g.step === 'school') body = `<h2>🎓 ${esc(g.schoolNaam || 'Je school')} gebruikt Leerpuls!</h2><p class="muted small">Met je schoolmail <b>${esc(g.email)}</b> kun je meteen beginnen. Vul je naam in, dan sturen we je een inlogcode.</p>
+    <form id="fSchool" class="stack"><label class="field"><span>Voor- en achternaam</span><input id="schName" autocomplete="name" required maxlength="80"></label>${err}
+    <button class="btn hl wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Code versturen…' : 'Stuur inlogcode'}</button></form>
+    <button class="link" data-gate="email">← Ander e-mailadres</button>`;
+  if (g.step === 'wachtlijst') body = `<h2>Je staat op de wachtlijst ⏳</h2><p>Alle plekken van <b>${esc(g.schoolNaam || 'je school')}</b> zijn op dit moment in gebruik. We hebben de beheerder een seintje gegeven.</p><p class="small muted">Zodra er plek is, krijg je een mail en kun je inloggen met je schoolmail.</p><button class="btn ghost" data-gate="email">Terug naar inloggen</button>`;
+  if (g.step === 'signup') { const su = g.su || {}; body = `<h2>Account aanmaken</h2><p class="muted small">Leerpuls kost <b>${prijsTxt()} per maand</b> en is maandelijks opzegbaar. Maak eerst je account aan. Daarna log je in met een code die je per mail krijgt en betaal je met iDEAL.</p>
+    <form id="fSignup" class="stack" novalidate>
+      <label class="field"><span>Voor- en achternaam</span><input id="suName" autocomplete="name" required maxlength="80" value="${esc(su.name || '')}"></label>
+      <label class="field"><span>E-mailadres</span><input id="suEmail" type="email" autocomplete="email" required value="${esc(su.email || g.email || '')}"></label>
+      <label class="field"><span>Opleiding en school (optioneel)</span><input id="suOpl" maxlength="60" placeholder="bijv. Commerciële Economie, Hogeschool Leiden" value="${esc(su.opleiding || '')}"></label>
+      <div class="hp" aria-hidden="true"><label>Website<input id="suSite" tabindex="-1" autocomplete="off"></label></div>
+      <label class="check"><input type="checkbox" id="suOk" ${su.akkoord ? 'checked' : ''}><span>Ik ga akkoord met de <a href="voorwaarden.html" target="_blank" rel="noopener">algemene voorwaarden</a> en de <a href="privacy.html" target="_blank" rel="noopener">privacyverklaring</a>.</span></label>
+      ${err}<button class="btn hl wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Account aanmaken…' : 'Account aanmaken'}</button></form>
+    <button class="link" data-gate="email">← Terug naar inloggen</button>`; }
+  if (g.step === 'betalen') { const t = g.toe || {}; const future = t.betaald_tot && new Date(t.betaald_tot) > new Date();
+    let lead = '';
+    if (g.payFailed) lead = `<div class="notice">We hebben je betaling (nog) niet ontvangen. Heb je hem wel afgerond? Dan kan het nog even duren. <button class="link" data-gate="recheck">Opnieuw controleren</button></div>`;
+    else if (t.abo_status === 'achterstand') lead = `<div class="notice">De laatste automatische betaling is niet gelukt. Betaal opnieuw om verder te gaan met Leerpuls.</div>`;
+    else if (t.abo_status === 'opgezegd' && future) lead = `<div class="notice">Je abonnement is opgezegd en loopt nog tot en met ${fmtLong(t.betaald_tot)}. Start je opnieuw, dan gaat de nieuwe maand pas daarna in.</div>`;
+    else if (t.abo_status === 'opgezegd' || t.abo_status === 'actief') lead = `<p>Je abonnement is afgelopen. Fijn dat je terug bent! Al je stof staat nog klaar.</p>`;
+    else if (t.active === false) lead = `<div class="notice">Je account is gepauzeerd door de beheerder.</div>`;
+    body = !aboOn() ? `<h2>Je hebt (nog) geen toegang</h2>${lead}<p>Abonnementen zijn op dit moment niet beschikbaar. Mail naar <span class="mono">${OWNER}</span> als je vragen hebt.</p><div class="row"><button class="btn ghost" data-gate="logout">Uitloggen</button></div>`
+    : `<h2>${t.abo_status && t.abo_status !== 'geen' && t.abo_status !== 'open' ? 'Ga verder met Leerpuls' : 'Start je abonnement'}</h2>${lead}
+    <div class="price"><span class="big">${prijsTxt()}</span><span> per maand</span><span class="small muted">maandelijks opzegbaar</span></div>
+    <ul class="benefits"><li>📝 Oefentoetsen met cijfer, van je eigen stof</li><li>🃏 Slimme flashcards die terugkomen op het juiste moment</li><li>🗣️ Gesprekken oefenen, ook met een irritante klant</li><li>📸 Foto's van je aantekeningen omzetten naar oefenstof</li><li>📅 Planner, leerplan en herinneringen voor je toetsen</li></ul>
+    <form id="fPay" class="stack">
+      <label class="check"><input type="checkbox" id="payOk"><span>Ik ga akkoord met de <a href="voorwaarden.html" target="_blank" rel="noopener">algemene voorwaarden</a> en met de automatische afschrijving van ${prijsTxt()} per maand, tot ik opzeg.</span></label>
+      <label class="check"><input type="checkbox" id="payNow"><span>Ik wil Leerpuls direct gebruiken en weet dat ik daardoor geen 14 dagen bedenktijd heb.</span></label>
+      ${err}<button class="btn hl wide" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Even geduld…' : `Betaal ${prijsTxt()} en start`}</button></form>
+    <p class="small muted">Je betaalt veilig via Mollie, bijvoorbeeld met iDEAL. Daarna wordt het bedrag elke maand automatisch afgeschreven. Opzeggen kan altijd in de app bij Account.${ABO.info.test ? ' <b>Testmodus: er wordt niet echt betaald.</b>' : ''}</p>
+    <div class="row between">${g.inApp ? `<button class="link" data-gate="backapp">← Terug naar Leerpuls</button>` : `<span class="small muted">In een klas met gratis toegang? Vraag je docent.</span>`}<button class="link" data-gate="logout">Uitloggen</button></div>`; }
+  if (g.step === 'verwerken') body = `<h2>Betaling controleren…</h2><p class="muted">⏳ We wachten op de bevestiging van je betaling. Dit duurt meestal maar een paar seconden.</p>`;
   if (g.step === 'requested') body = `<h2>Aanvraag verstuurd 🎉</h2><p>Bedankt${g.rq.name ? ', ' + esc(g.rq.name.split(' ')[0]) : ''}! We hebben je aanvraag ontvangen en je krijgt een bevestiging op <b>${esc(g.rq.email)}</b>.</p><p class="small muted">Zodra je aanvraag is goedgekeurd, krijg je nog een mail. Daarna log je hier in met je e-mailadres.</p><button class="btn ghost" data-gate="email">Terug naar inloggen</button>`;
   if (g.step === 'code') body = `<h2>Vul je code in</h2><p class="muted small">We hebben een inlogcode gestuurd naar <b>${esc(g.email)}</b>. Kijk ook even in je spam.</p>
     <form id="fCode" class="stack"><label class="field"><span>Inlogcode</span><input id="gCode" class="codein" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required></label>${err}${msg}
@@ -482,14 +605,14 @@ function renderGate() {
     <label class="field"><span>Herhaal wachtwoord</span><input id="gNew2" type="password" autocomplete="new-password" minlength="8" required></label>${err}
     <button class="btn wide" ${g.busy ? 'disabled' : ''}>Wachtwoord opslaan</button></form>
     <button class="link" data-gate="skip">Later instellen</button>`;
-  if (g.step === 'blocked') body = `<h2>Geen toegang</h2><p>${esc(g.reason)}</p><p class="small muted">Vragen? Mail naar <span class="mono">${OWNER}</span>.</p><div class="row">${g.canRequest ? `<button class="btn hl" data-gate="request">Toegang aanvragen</button>` : ''}<button class="btn ghost" data-gate="logout">Terug naar inloggen</button></div>`;
+  if (g.step === 'blocked') body = `<h2>Geen toegang</h2><p>${esc(g.reason)}</p><p class="small muted">Vragen? Mail naar <span class="mono">${OWNER}</span>.</p><div class="row">${g.canRequest && aboOn() ? `<button class="btn hl" data-gate="signup">Account aanmaken</button>` : ''}${g.canRequest ? `<button class="btn ${aboOn() ? 'ghost' : 'hl'}" data-gate="request">Toegang aanvragen</button>` : ''}<button class="btn ghost" data-gate="logout">Terug naar inloggen</button></div>`;
   if (g.step === 'loading') body = `<p class="muted">Bezig met laden…</p>`;
   $('#gate').innerHTML = `<div class="gatebox"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div><section class="panel">${body}</section>
   <p class="small muted">Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg.</p></div>`;
   const focus = { email: '#gEmail', code: '#gCode', password: g.email ? '#gPw' : '#gEmail2', setpw: '#gNew' }[g.step];
   if (focus && $(focus)) $(focus).focus();
 }
-function showGate(step, extra = {}) { Object.assign(G, { step, err: '', msg: '', busy: false, canRequest: false }, extra); if (step !== 'email') G.noAccount = false; $('#app').hidden = true; $('#gate').hidden = false; renderGate(); }
+function showGate(step, extra = {}) { Object.assign(G, { step, err: '', msg: '', busy: false, canRequest: false, payFailed: false, inApp: false }, extra); if (step !== 'email') G.noAccount = false; $('#app').hidden = true; $('#gate').hidden = false; renderGate(); }
 
 async function sendCode(email) {
   G.busy = true; G.err = ''; renderGate();
@@ -501,18 +624,69 @@ async function sendCode(email) {
 document.addEventListener('submit', async e => {
   const f = e.target; if (!f.id || !f.id.startsWith('f')) return;
   e.preventDefault();
-  if (f.id === 'fEmail') { const email = $('#gEmail').value.trim().toLowerCase(); G.email = email; G.noAccount = false; await sendCode(email); }
+  if (f.id === 'fEmail') {
+    const email = $('#gEmail').value.trim().toLowerCase(); G.email = email; G.noAccount = false;
+    const ok = await sendCode(email);
+    if (!ok && G.noAccount) { const naam = await schoolCheck(email); if (naam) showGate('school', { email, schoolNaam: naam }); }
+  }
   if (f.id === 'fRequest') {
-    const rq = { name: $('#rqName').value.trim(), email: $('#rqEmail').value.trim().toLowerCase(), opleiding: $('#rqOpl').value.trim(), groep: $('#rqGroep').value.trim(), motivatie: $('#rqMot').value.trim(), akkoord: $('#rqOk').checked, website: $('#rqSite').value, type: G.rq.type === 'docent' ? 'docent' : 'student' };
+    const rq = { ...readRq(), website: $('#rqSite').value, type: ['docent', 'school'].includes(G.rq.type) ? G.rq.type : 'student' };
     G.rq = rq;
-    if (rq.name.length < 2) { G.err = 'Vul je voor- en achternaam in.'; renderGate(); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rq.email)) { G.err = 'Vul een geldig e-mailadres in.'; renderGate(); return; }
-    if (!rq.akkoord) { G.err = 'Vink aan dat je akkoord gaat, anders kunnen we je aanvraag niet bewaren.'; renderGate(); return; }
+    const bad = m => { G.err = m; renderGate(); };
+    if (rq.type === 'school') {
+      const sc = rq.school;
+      if (sc.naam.length < 2) return bad('Vul de naam van de school in.');
+      if (sc.kvk.replace(/\D/g, '').length !== 8) return bad('Een KvK-nummer heeft 8 cijfers.');
+      if (sc.btw && !/^[A-Z]{2}[0-9A-Z]{8,12}$/.test(sc.btw.toUpperCase().replace(/[\s.]/g, ''))) return bad('Dit btw-nummer klopt niet. Een Nederlands btw-nummer ziet eruit als NL123456789B01.');
+      if (!sc.adres || !sc.plaats) return bad('Vul het adres en de plaats van de school in.');
+      if (!sc.domeinen.trim()) return bad('Vul het e-maildomein van de studenten in, bijvoorbeeld hsleiden.nl.');
+      if (!(+sc.studenten >= 1)) return bad('Vul in hoeveel studenten Leerpuls ongeveer gaan gebruiken.');
+    }
+    if (rq.name.length < 2) return bad('Vul je voor- en achternaam in.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rq.email)) return bad('Vul een geldig e-mailadres in.');
+    if (!rq.akkoord) return bad('Vink aan dat je akkoord gaat, anders kunnen we je aanvraag niet bewaren.');
     G.busy = true; G.err = ''; renderGate();
     try { await publicFn({ action: 'request', ...rq }); G.email = rq.email; showGate('requested'); }
     catch (e) {
       G.busy = false;
-      G.err = ({ has_account: 'Dit e-mailadres heeft al een account. Ga terug en log in met een code.', pending: 'Er loopt al een aanvraag voor dit e-mailadres. Je krijgt een mail zodra hij is behandeld.', busy: 'Er komen nu veel aanvragen binnen. Probeer het over een uur opnieuw.', bad_email: 'Vul een geldig e-mailadres in.', bad_name: 'Vul je voor- en achternaam in.', no_consent: 'Vink aan dat je akkoord gaat.' })[e.error] || 'Versturen lukte niet. Controleer je internet en probeer het opnieuw.';
+      G.err = ({ has_account: 'Dit e-mailadres heeft al een account. Ga terug en log in met een code.', pending: 'Er loopt al een aanvraag voor dit e-mailadres. Je krijgt een mail zodra hij is behandeld.', busy: 'Er komen nu veel aanvragen binnen. Probeer het over een uur opnieuw.', bad_email: 'Vul een geldig e-mailadres in.', bad_name: 'Vul je voor- en achternaam in.', no_consent: 'Vink aan dat je akkoord gaat.',
+        bad_school: 'Vul de naam van de school in.', bad_kvk: 'Een KvK-nummer heeft 8 cijfers.', bad_btw: 'Dit btw-nummer klopt niet.', bad_adres: 'Vul het adres en de plaats van de school in.', bad_domain: 'Vul een e-maildomein van de school in (geen gmail, hotmail of outlook).', bad_count: 'Vul een geldig aantal studenten in.' })[e.error] || 'Versturen lukte niet. Controleer je internet en probeer het opnieuw.';
+      renderGate();
+    }
+  }
+  if (f.id === 'fSchool') {
+    const name = $('#schName').value.trim();
+    if (name.length < 2) { G.err = 'Vul je voor- en achternaam in.'; renderGate(); return; }
+    G.busy = true; G.err = ''; renderGate();
+    try { await publicFn({ action: 'schoolcheck', email: G.email, name }); }
+    catch (e) { G.busy = false; G.err = 'Dat lukte niet. Probeer het opnieuw.'; renderGate(); return; }
+    if (await sendCode(G.email)) { G.msg = `Welkom! We hebben een inlogcode gestuurd naar je schoolmail.`; renderGate(); }
+  }
+  if (f.id === 'fSignup') {
+    const su = { name: $('#suName').value.trim(), email: $('#suEmail').value.trim().toLowerCase(), opleiding: $('#suOpl').value.trim(), akkoord: $('#suOk').checked, website: $('#suSite').value };
+    G.su = su;
+    if (su.name.length < 2) { G.err = PAY_ERR.bad_name; renderGate(); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(su.email)) { G.err = PAY_ERR.bad_email; renderGate(); return; }
+    if (!su.akkoord) { G.err = 'Vink aan dat je akkoord gaat met de voorwaarden en de privacyverklaring.'; renderGate(); return; }
+    G.busy = true; G.err = ''; renderGate();
+    const schoolNaam = await schoolCheck(su.email);
+    if (schoolNaam) { G.email = su.email; showGate('school', { email: su.email, schoolNaam }); return; }
+    try { await payFn({ action: 'signup', ...su }); }
+    catch (e) { G.busy = false; G.err = PAY_ERR[e.error] || 'Aanmelden lukte niet. Probeer het opnieuw.'; renderGate(); return; }
+    G.email = su.email;
+    if (await sendCode(su.email)) { G.msg = 'Je account is aangemaakt! We hebben je een inlogcode gestuurd.'; renderGate(); }
+  }
+  if (f.id === 'fPay') {
+    if (!$('#payOk').checked || !$('#payNow').checked) { G.err = 'Vink allebei de vakjes aan om verder te gaan.'; renderGate(); return; }
+    G.busy = true; G.err = ''; renderGate();
+    try {
+      const r = await payFn({ action: 'checkout', akkoord: true }, true);
+      if (r.url) { location.href = r.url; return; }
+      throw { error: 'mollie' };
+    } catch (e) {
+      G.busy = false;
+      if (e.error === 'not_needed' || e.error === 'already') { started = false; await start(false); return; }
+      G.err = PAY_ERR[e.error] || ('Betalen starten lukte niet' + (e.message ? ` (${e.message})` : '') + '. Probeer het opnieuw.');
       renderGate();
     }
   }
@@ -551,9 +725,12 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-gate]'); if (!b) return;
   const a = b.dataset.gate;
   if (a === 'password') showGate('password');
-  if (a === 'rqtype') { const keep = { name: $('#rqName').value, email: $('#rqEmail').value, opleiding: $('#rqOpl').value, groep: $('#rqGroep').value, motivatie: $('#rqMot').value, akkoord: $('#rqOk').checked }; G.rq = { ...G.rq, ...keep, type: b.dataset.v }; renderGate(); return; }
+  if (a === 'rqtype') { G.rq = { ...G.rq, ...readRq(), type: b.dataset.v }; renderGate(); return; }
   if (a === 'request') { if (sb) { const { data: { session } } = await sb.auth.getSession(); if (session) { G.rq = { ...G.rq, email: session.user.email }; await sb.auth.signOut(); } } showGate('request'); }
   if (a === 'email') showGate('email');
+  if (a === 'signup') { if (sb) { const { data: { session } } = await sb.auth.getSession(); if (session) await sb.auth.signOut(); } G.su = { ...(G.su || {}), email: (G.su && G.su.email) || G.email }; showGate('signup'); }
+  if (a === 'recheck') { await waitForPayment(); return; }
+  if (a === 'backapp') { showApp(); return; }
   if (a === 'resend') { if (Date.now() < G.resendAt) { G.err = `Wacht nog ${Math.ceil((G.resendAt - Date.now()) / 1000)} seconden voor een nieuwe code.`; renderGate(); return; } await sendCode(G.email); G.msg = 'Nieuwe code verstuurd.'; renderGate(); }
   if (a === 'skip') { try { sessionStorage.setItem('lp_skip_pw', '1'); } catch {} showApp(); }
   if (a === 'logout') { if (!sb) { location.reload(); return; } await sb.auth.signOut(); showGate('email'); }
@@ -566,10 +743,27 @@ async function start(viaCode) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { started = false; showGate('email'); return; }
   S.user = session.user;
-  const { data: acc, error } = await sb.rpc('link_account');
+  let { data: acc, error } = await sb.rpc('link_account');
+  if (!error && (!acc || !acc.email)) {
+    // geen account: misschien een student van een aangesloten school (inloggen met schoolmail)
+    try {
+      const r = await adminFn({ action: 'schooljoin' });
+      if (r.wachtlijst) { started = false; await sb.auth.signOut(); showGate('wachtlijst', { schoolNaam: r.school }); return; }
+      if (r.ok) { ({ data: acc, error } = await sb.rpc('link_account')); if (r.school && !r.existed) setTimeout(() => toast(`Welkom! Je hebt toegang via ${r.school} 🎓`, 7000), 400); }
+    } catch (e) { /* geen school: gewone melding hieronder */ }
+  }
   if (error || !acc || !acc.email) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Dit e-mailadres heeft (nog) geen Leerpuls-account.', canRequest: true }); return; }
   if (!acc.active) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Je account is gepauzeerd door de beheerder.' }); return; }
   S.account = acc; S.isAdmin = acc.email === OWNER || acc.role === 'admin'; S.isDocent = acc.role === 'docent';
+  await loadAboInfo();
+  const toe = await myToegang(); S.toegang = toe;
+  try { const { data: ms } = await sb.rpc('mijn_school'); S.school = ms || null; } catch { S.school = null; } // null = abonnement.sql nog niet gedraaid → gewoon toegang
+  if (toe && !toe.toegang) {
+    started = false;
+    if (payReturn) { payReturn = false; await waitForPayment(); return; }
+    showGate('betalen', { toe }); return;
+  }
+  if (payReturn) { payReturn = false; setTimeout(() => toast('Betaling gelukt! Welkom bij Leerpuls 🎉', 7000), 300); }
   let skip = false; try { skip = sessionStorage.getItem('lp_skip_pw') === '1'; } catch {}
   if (viaCode && !(S.user.user_metadata || {}).password_set && !skip) { showGate('setpw'); return; }
   showApp();
@@ -636,6 +830,7 @@ function aiErr(e) {
     busy: 'De AI is even erg druk. Probeer het over een minuut opnieuw.',
     no_key: 'De AI is nog niet ingesteld. Laat je beheerder de API-key toevoegen.',
     paused: 'Je account is gepauzeerd door de beheerder.',
+    no_access: 'Je abonnement is niet (meer) actief. Ga naar Account om verder te gaan.',
     too_large: 'Te veel stof in één keer. Kies minder documenten.',
     invalid_json: 'De AI gaf een antwoord dat niet te lezen was. Probeer het nog een keer.',
     unauthorized: 'Je inlogsessie is verlopen. Ga naar Account, log uit en log opnieuw in.',
@@ -1324,6 +1519,16 @@ function vUitleg() {
 }
 
 /* ---- Beheer ---- */
+function schoolReqCard(r, conf) {
+  const d = r.details || {};
+  const row = (k, v) => v ? `<div><span class="muted">${k}</span> ${esc(String(v))}</div>` : '';
+  return `<div class="req"><div class="row between"><b>🏫 ${esc(d.naam || r.opleiding)} <span class="pill good">School</span></b><span class="small muted">${fmtDate(r.created_at)}</span></div>
+    <div class="kv small">${row('Contact:', r.name + (d.functie ? ' (' + d.functie + ')' : ''))}${row('E-mail:', r.email)}${row('Telefoon:', d.tel)}${row('KvK:', d.kvk)}${row('Btw:', d.btw)}${row('Adres:', [d.adres, [d.postcode, d.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', '))}${row('Factuur-e-mail:', d.factuur_email)}${row('Verwacht:', `${d.studenten || '?'} studenten, ${d.docenten || 0} docenten`)}${row('Start:', d.startdatum ? fmtDay(d.startdatum) : '')}</div>
+    ${r.motivatie ? `<div class="quote">${esc(r.motivatie)}</div>` : ''}
+    ${conf ? '' : `<div class="fields"><label class="field"><span>E-maildomein studenten</span><input id="rqDom-${r.id}" value="${esc((d.domeinen || []).join(', '))}"></label><label class="field"><span>Aantal plekken</span><input id="rqPlek-${r.id}" type="number" min="0" max="100000" value="${Number(d.studenten) || 0}"></label><label class="field"><span>Prijs per plek (€, optioneel)</span><input id="rqPrijs-${r.id}" inputmode="decimal" placeholder="bijv. 3,50"></label></div>`}
+    <div class="row">${conf ? `<span class="small">Afwijzen?</span><button class="btn sm danger" data-act="reqreject" data-id="${r.id}" data-mail="1">Afwijzen en mail sturen</button><button class="btn sm ghost" data-act="reqreject" data-id="${r.id}">Afwijzen zonder mail</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>`
+      : `<button class="btn sm hl" data-act="reqapprove" data-id="${r.id}" ${S.busy ? 'disabled' : ''}>School goedkeuren</button><button class="btn sm ghost" data-act="confirm" data-key="rej:${r.id}">Afwijzen</button>`}</div></div>`;
+}
 function reqSection() {
   const A = S.admin;
   if (A.reqErr) return `<section class="panel"><h3>Aanvragen</h3><div class="notice">De tabel voor aanvragen bestaat nog niet. Draai <b>aanvragen.sql</b> in Supabase (SQL Editor) en upload de nieuwe Edge Function "Admin".</div></section>`;
@@ -1331,6 +1536,7 @@ function reqSection() {
   let h = `<section class="panel"><div class="row between"><h3>Aanvragen</h3><div class="row"><span class="label">${open.length ? plural(open.length, 'nieuwe', 'nieuwe') : 'geen nieuwe'}</span><button class="btn sm ghost" data-act="testwa" ${S.busy ? 'disabled' : ''} title="Stuur een testbericht naar je WhatsApp">📱 Test WhatsApp</button></div></div>`;
   if (!open.length) h += `<p class="small muted">Geen openstaande aanvragen. Nieuwe aanvragen komen binnen via de knop "Toegang aanvragen" op het inlogscherm, en je krijgt er een mail van.</p>`;
   else h += `<div>${open.map(r => { const conf = S.confirm === 'rej:' + r.id;
+    if (r.type === 'school') return schoolReqCard(r, conf);
     const isDoc = r.type === 'docent'; const ks = A.klassen || [];
     const guess = (ks.find(k => r.groep && k.naam.toLowerCase() === r.groep.toLowerCase()) || {}).id || '';
     return `<div class="req"><div class="row between"><b>${esc(r.name)} ${isDoc ? '<span class="pill warn">Docent</span>' : '<span class="pill">Student</span>'}</b><span class="small muted">${fmtDate(r.created_at)}</span></div>
@@ -1338,10 +1544,24 @@ function reqSection() {
       ${r.opleiding || r.groep ? `<span class="small muted">${esc([r.opleiding, r.groep].filter(Boolean).join(' · '))}</span>` : ''}
       ${r.motivatie ? `<div class="quote">${esc(r.motivatie)}</div>` : ''}
       ${ks.length && !conf ? (isDoc ? `<div class="stack" style="gap:4px"><span class="small"><b>Koppel aan klassen</b> (kan ook later bij Klassen)</span><div class="chips">${ks.map(k => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" data-reqklas="${r.id}" value="${k.id}" ${r.groep && r.groep.toLowerCase().includes(k.naam.toLowerCase()) ? 'checked' : ''}>${esc(k.naam)}</label>`).join('')}</div></div>` : `<label class="field"><span>Zet in klas</span>${klasSelect('reqKlas-' + r.id, guess)}</label>`) : ''}
+      ${!isDoc && !conf && A.rows && 'gratis' in (A.rows[0] || {}) ? `<label class="row small" style="gap:8px"><input type="checkbox" id="reqGratis-${r.id}" checked> Gratis toegang (anders moet deze student een abonnement nemen, tenzij de klas gratis is)</label>` : ''}
       <div class="row">${conf ? `<span class="small">Afwijzen?</span><button class="btn sm danger" data-act="reqreject" data-id="${r.id}" data-mail="1">Afwijzen en mail sturen</button><button class="btn sm ghost" data-act="reqreject" data-id="${r.id}">Afwijzen zonder mail</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>`
         : `<button class="btn sm hl" data-act="reqapprove" data-id="${r.id}" ${S.busy ? 'disabled' : ''}>Goedkeuren</button><button class="btn sm ghost" data-act="confirm" data-key="rej:${r.id}">Afwijzen</button>`}</div></div>`; }).join('')}</div>`;
   if (done.length) h += `<details><summary class="link small" style="cursor:pointer">Eerder behandeld (${done.length})</summary><div class="list" style="margin-top:8px">${done.map(r => `<div class="item"><div class="main"><span class="t">${esc(r.name)}</span><span class="small muted mono">${esc(r.email)}</span></div><span class="pill ${r.status === 'goedgekeurd' ? 'good' : 'bad'}">${r.status}</span><span class="small muted">${r.handled_at ? fmtDate(r.handled_at) : ''}</span></div>`).join('')}</div></details>`;
   return h + `</section>`;
+}
+function toegangCell(r) {
+  if (r.email === OWNER || r.role !== 'student') return `<span class="small muted">altijd (${r.role === 'docent' ? 'docent' : 'beheerder'})</span>`;
+  const k = (S.admin.klassen || []).find(x => x.id === r.klas_id);
+  const sid = (S.admin.schoolOf || {})[r.email]; const sch = sid && (S.admin.scholen || []).find(x => x.id === sid);
+  if (sch && !r.gratis) return `<span class="pill ${sch.status === 'actief' ? 'good' : 'bad'}">via school${sch.status === 'actief' ? '' : ' (gepauzeerd)'}</span>`;
+  const tot = r.betaald_tot ? new Date(r.betaald_tot).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) : '';
+  const st = r.gratis ? '' : k && k.gratis ? `<span class="pill good">gratis via klas</span>`
+    : r.abo_status === 'actief' ? `<span class="pill good">abonnee${tot ? ' · ' + tot : ''}</span>`
+    : r.abo_status === 'opgezegd' ? `<span class="pill warn">opgezegd${tot ? ' · tot ' + tot : ''}</span>`
+    : r.abo_status === 'achterstand' ? `<span class="pill bad">betaling mislukt</span>`
+    : r.toegang === false ? `<span class="pill bad">moet betalen</span>` : '';
+  return `<div class="stack" style="gap:4px"><label class="small" style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" data-gratis="${esc(r.email)}" ${r.gratis ? 'checked' : ''}> Gratis</label>${st}</div>`;
 }
 function vBeheer() {
   if (!S.isAdmin) return '';
@@ -1356,9 +1576,11 @@ function vBeheer() {
     <div class="stack" style="gap:2px"><span class="label">Accounts</span><span class="cijfer" style="font-size:2rem">${rows.length}</span></div>
     <div class="stack" style="gap:2px"><span class="label">Actief laatste 7 dagen</span><span class="cijfer" style="font-size:2rem">${actief7}</span></div>
     <div class="stack" style="gap:2px"><span class="label">AI-acties vandaag</span><span class="cijfer" style="font-size:2rem">${today}</span></div>
-    <div class="stack" style="gap:2px"><span class="label">AI-acties 7 dagen</span><span class="cijfer" style="font-size:2rem">${week}</span></div></div>
+    <div class="stack" style="gap:2px"><span class="label">AI-acties 7 dagen</span><span class="cijfer" style="font-size:2rem">${week}</span></div>
+    ${'abo_status' in (rows[0] || {}) ? (() => { const n = rows.filter(r => r.abo_status === 'actief').length; const pr = ABO.info && ABO.info.prijs ? Number(ABO.info.prijs) : 0; return `<div class="stack" style="gap:2px"><span class="label">Betalende abonnees</span><span class="cijfer" style="font-size:2rem">${n}</span>${pr ? `<span class="small muted">≈ € ${(n * pr).toFixed(2).replace('.', ',')} per maand</span>` : ''}</div>`; })() : ''}</div>
     <p class="small muted">Je ziet alleen aantallen per student, nooit hun documenten, antwoorden of gesprekken.</p></section>
   ${reqSection()}
+  ${scholenSection()}
   ${klassenSection()}
   <section class="panel"><div class="row between"><h3>Account toevoegen</h3><button class="link small" data-act="adminbulk">${A.bulk ? 'Eén account toevoegen' : 'Meerdere tegelijk toevoegen'}</button></div>
   ${A.bulk ? `<label class="field"><span>Eén per regel: e-mailadres, of naam;e-mailadres</span><textarea id="adBulk" placeholder="Sanne de Vries;sanne@student.nl&#10;tim@student.nl"></textarea></label>`
@@ -1368,11 +1590,14 @@ function vBeheer() {
   <label class="field"><span>Groep of klas (vrije tekst, optioneel)</span><input id="adGroep" placeholder="bijv. CE1A"></label>
   <label class="field"><span>AI-acties per dag</span><input id="adLimit" type="number" min="0" max="10000" value="60"></label></div>
   <label class="row small" style="gap:8px"><input type="checkbox" id="adMail" checked> Stuur een welkomstmail met uitleg hoe je inlogt</label>
+  ${'gratis' in (rows[0] || {}) && A.newRole === 'student' ? `<label class="row small" style="gap:8px"><input type="checkbox" id="adGratis" checked> Gratis toegang (hoeft geen abonnement te nemen)</label>` : ''}
   <div><button class="btn" data-act="admincreate" ${S.busy ? 'disabled' : ''}>${A.bulk ? 'Accounts toevoegen' : 'Account toevoegen'}</button></div></section>
   <section class="panel"><div class="row between"><h3>Accounts</h3><input id="adFilter" placeholder="Zoek op naam, e-mail of groep" style="max-width:280px" value="${esc(A.filter || '')}" data-filter="1"></div>
-  <div class="tablewrap"><table><thead><tr><th>Naam</th><th>Rol</th><th>Klas</th><th>Status</th><th>Laatst actief</th><th>Docs</th><th>Gem. cijfer</th><th>AI vandaag</th><th>Limiet</th><th></th></tr></thead><tbody>
+  <div class="tablewrap"><table><thead><tr><th>Naam</th><th>Rol</th><th>Klas</th>${'gratis' in (rows[0] || {}) ? '<th>Toegang</th>' : ''}<th>Status</th><th>Laatst actief</th><th>Docs</th><th>Gem. cijfer</th><th>AI vandaag</th><th>Limiet</th><th></th></tr></thead><tbody>
   ${shown.map(r => { const own = r.email === OWNER; const conf = S.confirm === 'acc:' + r.email;
-    return `<tr><td><b>${esc(r.name || '—')}</b><br><span class="small muted mono">${esc(r.email)}</span></td><td>${own ? 'Hoofdbeheerder' : `<select data-rolesel="${esc(r.email)}" style="width:auto" aria-label="Rol ${esc(r.email)}">${[['student', 'Student'], ['docent', 'Docent'], ['admin', 'Beheerder']].map(([k, l]) => `<option value="${k}" ${r.role === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td><td>${r.role === 'student' && !S.admin.klasErr ? klasSelect('', r.klas_id || '', `data-klasof="${esc(r.email)}" style="width:auto" aria-label="Klas ${esc(r.email)}"`) : esc(r.groep || '')}</td>
+    const sid = (S.admin.schoolOf || {})[r.email];
+    return `<tr><td><b>${esc(r.name || '—')}</b><br><span class="small muted mono">${esc(r.email)}</span>${sid ? `<br><span class="pill">🏫 ${esc(schoolNaam(sid))}</span>` : ''}</td><td>${own ? 'Hoofdbeheerder' : `<select data-rolesel="${esc(r.email)}" style="width:auto" aria-label="Rol ${esc(r.email)}">${[['student', 'Student'], ['docent', 'Docent'], ['admin', 'Beheerder']].map(([k, l]) => `<option value="${k}" ${r.role === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td><td>${r.role === 'student' && !S.admin.klasErr ? klasSelect('', r.klas_id || '', `data-klasof="${esc(r.email)}" style="width:auto" aria-label="Klas ${esc(r.email)}"`) : esc(r.groep || '')}</td>
+    ${'gratis' in r ? `<td>${toegangCell(r)}</td>` : ''}
     <td>${r.active ? `<span class="pill good">actief</span>` : `<span class="pill bad">gepauzeerd</span>`}${!r.last_login ? ` <span class="pill">nooit ingelogd</span>` : ''}</td>
     <td class="small">${r.laatst_actief ? fmtDay(r.laatst_actief) : (r.last_login ? fmtDate(r.last_login) : '—')}</td><td class="num">${r.docs}</td><td class="num">${r.gem_cijfer != null ? fmtCijfer(r.gem_cijfer) : '—'}</td><td class="num">${r.ai_vandaag}</td>
     <td><input type="number" min="0" max="10000" value="${r.daily_ai_limit}" style="width:80px" data-limit="${esc(r.email)}" aria-label="AI-limiet ${esc(r.email)}"></td>
@@ -1382,16 +1607,32 @@ function vBeheer() {
 }
 
 /* ---- Account ---- */
+function aboPanel() {
+  const t = S.toegang; if (!t || t.reden === 'rol') return '';
+  if (t.reden === 'geen' && (!t.abo_status || t.abo_status === 'geen')) return '';
+  const tot = fmtLong(t.betaald_tot);
+  let h = `<section class="panel"><h3>Abonnement</h3>`;
+  if (t.reden === 'school') h += `<p>Je hebt toegang via je school${t.school ? ` <b>${esc(t.school)}</b>` : ''}. 🎓</p>`;
+  else if (t.reden === 'klas') h += `<p>Je hebt <b>gratis toegang</b>${t.klas ? ` via klas ${esc(t.klas)}` : ''}. 🎉</p>`;
+  else if (t.reden === 'gratis') h += `<p>Je hebt <b>gratis toegang</b> tot Leerpuls. 🎉</p>`;
+  else if (t.abo_status === 'actief') h += `<p><span class="pill good">Actief</span> ${prijsTxt() ? prijsTxt() + ' per maand' : ''}</p><p class="small muted">${tot ? `Volgende betaling rond ${tot}. ` : ''}Opzeggen kan altijd; je houdt dan toegang tot het einde van de betaalde maand.</p>
+    ${S.confirm === 'abocancel' ? `<div class="row"><span class="small">Abonnement echt opzeggen?</span><button class="btn sm danger" data-act="abocancel" ${S.busy ? 'disabled' : ''}>Ja, zeg op</button><button class="btn sm ghost" data-act="cancel">Nee</button></div>` : `<div><button class="btn ghost" data-act="confirm" data-key="abocancel">Abonnement opzeggen</button></div>`}`;
+  else if (t.abo_status === 'opgezegd') h += `<p><span class="pill warn">Opgezegd</span> Je kunt Leerpuls nog gebruiken${tot ? ` tot en met <b>${tot}</b>` : ''}. Er wordt niets meer afgeschreven.</p><div><button class="btn" data-act="abopay">Abonnement weer starten</button></div>`;
+  else if (t.abo_status === 'achterstand') h += `<p><span class="pill bad">Betaling mislukt</span> De laatste automatische afschrijving is niet gelukt. Je hebt nog even toegang.</p><div><button class="btn hl" data-act="abopay">Opnieuw betalen</button></div>`;
+  else return '';
+  return h + `</section>`;
+}
 function vAccount() {
   const a = S.account; const pwSet = (S.user.user_metadata || {}).password_set;
   return `<div class="stack"><h2>Account</h2><div class="grid2">
-  <section class="panel"><h3>Je gegevens</h3><label class="field"><span>Naam</span><input id="acName" value="${esc(a.name || '')}" maxlength="80"></label><p class="small muted">E-mailadres: <span class="mono">${esc(a.email)}</span>${a.groep ? ` · Groep: ${esc(a.groep)}` : ''}</p><div><button class="btn ghost" data-act="acname">Naam opslaan</button></div></section>
+  <section class="panel"><h3>Je gegevens</h3><label class="field"><span>Naam</span><input id="acName" value="${esc(a.name || '')}" maxlength="80"></label><p class="small muted">E-mailadres: <span class="mono">${esc(a.email)}</span>${a.groep ? ` · Groep: ${esc(a.groep)}` : ''}${S.school ? ` · School: ${esc(S.school.naam)}` : ''}</p><div><button class="btn ghost" data-act="acname">Naam opslaan</button></div></section>
   <section class="panel"><h3>${pwSet ? 'Wachtwoord wijzigen' : 'Wachtwoord instellen'}</h3><p class="small muted">${pwSet ? 'Je kunt inloggen met je wachtwoord of met een code per mail.' : 'Je logt nu in met een code per mail. Met een wachtwoord gaat het sneller.'}</p>
   <form id="fAcctPw" class="stack"><label class="field"><span>Nieuw wachtwoord (minimaal 8 tekens)</span><input id="acPw" type="password" autocomplete="new-password" minlength="8" required></label><label class="field"><span>Herhaal wachtwoord</span><input id="acPw2" type="password" autocomplete="new-password" minlength="8" required></label><div><button class="btn">Opslaan</button></div></form></section>
   ${S.klas ? `<section class="panel"><h3>Klas ${esc(S.klas.naam)}</h3><p class="small muted">${S.klas.school ? esc(S.klas.school) + ' · ' : ''}${(S.klas.docenten || []).length ? 'Docent: ' + esc(S.klas.docenten.join(', ')) : 'Nog geen docent gekoppeld'}</p>
     <p>Je docent ziet de resultaten van zijn of haar opdrachten: <b>${S.klas.deelt_resultaten ? 'ja' : 'nee'}</b></p>
     <p class="small muted">Alleen het cijfer en de uitkomst van opdrachten die je docent klaarzet. Je eigen stof, flashcards en oefeningen blijven altijd privé.</p>
     <div>${S.klas.deelt_resultaten ? `<button class="btn ghost" data-act="share" data-v="0">Stop met delen</button>` : `<button class="btn" data-act="share" data-v="1">Deel mijn opdrachtresultaten</button>`}</div></section>` : ''}
+  ${aboPanel()}
   ${S.isDocent ? `<section class="panel"><h3>Docentaccount</h3><p class="small muted">Je beheert ${plural(S.T.klassen.length, 'klas', 'klassen')}. Klassen koppelen gebeurt door de beheerder (${OWNER}).</p></section>` : ''}
   <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label><div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
   <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw. Voorlezen met de natuurlijke stem telt niet mee.</p></section>
@@ -1694,9 +1935,43 @@ async function loadRequests() {
   S.admin.reqs = data || []; S.admin.reqErr = false;
 }
 const pendingReqs = () => (S.admin.reqs || []).filter(r => r.status === 'nieuw');
+async function loadScholen() {
+  const A = S.admin;
+  try {
+    const [sc, wl, acc] = await Promise.all([
+      sb.from('scholen').select('*').order('naam'),
+      sb.from('school_wachtlijst').select('*').order('created_at'),
+      sb.from('accounts').select('email,school_id,role,active')
+    ]);
+    if (sc.error) throw sc.error;
+    A.scholen = sc.data || []; A.wacht = wl.data || []; A.schoolOf = {};
+    A.seats = {}; (acc.data || []).forEach(a => { if (a.school_id) { A.schoolOf[a.email] = a.school_id; if (a.role === 'student' && a.active) A.seats[a.school_id] = (A.seats[a.school_id] || 0) + 1; } });
+    A.schoolErr = false;
+  } catch (e) { console.warn('scholen', e); A.scholen = []; A.schoolErr = true; }
+}
+function schoolNaam(id) { const s = (S.admin.scholen || []).find(x => x.id === id); return s ? s.naam : ''; }
+function scholenSection() {
+  const A = S.admin;
+  if (A.schoolErr) return `<section class="panel"><h3>Scholen</h3><div class="notice">Scholen zijn nog niet ingesteld. Draai <b>scholen.sql</b> in Supabase (SQL Editor) en vervang de code van de Edge Function "Admin".</div></section>`;
+  const sc = A.scholen || [];
+  if (!sc.length) return `<section class="panel"><div class="row between"><h3>Scholen</h3><span class="label">0</span></div><p class="small muted">Nog geen scholen. Scholen melden zich aan via "Toegang aanvragen" → School. Na goedkeuring kunnen hun studenten met hun schoolmail inloggen.</p></section>`;
+  const tot = sc.reduce((t, s) => t + (A.seats[s.id] || 0) * (Number(s.prijs_per_plek) || 0), 0);
+  return `<section class="panel"><div class="row between"><h3>Scholen</h3><div class="row"><span class="label">${sc.length}</span><button class="btn sm ghost" data-act="schoolcsv">Factuuroverzicht (CSV)</button></div></div>
+    <div class="list">${sc.map(s => { const used = A.seats[s.id] || 0; const wait = (A.wacht || []).filter(w => w.school_id === s.id); const pct = s.plekken ? Math.min(100, Math.round(used / s.plekken * 100)) : 100; const free = Math.max(0, s.plekken - used); const open = A.openSchool === s.id;
+      return `<div class="item school"><div class="main" style="flex:1 1 260px"><span class="t">🏫 ${esc(s.naam)} ${s.status === 'actief' ? '<span class="pill good">actief</span>' : '<span class="pill bad">gepauzeerd</span>'}${wait.length ? ` <span class="pill warn">${wait.length} op wachtlijst</span>` : ''}</span>
+        <span class="small muted">${(s.domeinen || []).map(d => '@' + esc(d)).join(', ')}${s.plaats ? ' · ' + esc(s.plaats) : ''}</span>
+        <div class="seats" role="img" aria-label="${used} van ${s.plekken} plekken in gebruik"><i style="width:${pct}%" class="${used >= s.plekken ? 'vol' : ''}"></i></div>
+        <span class="small"><b>${used}</b> van <b>${s.plekken}</b> plekken in gebruik${s.prijs_per_plek != null ? ` · € ${Number(s.prijs_per_plek).toFixed(2).replace('.', ',')} per plek = <b>€ ${(used * Number(s.prijs_per_plek)).toFixed(2).replace('.', ',')}</b>` : ''}</span>
+        ${open ? `<div class="kv small" style="margin-top:6px"><div><span class="muted">KvK</span> ${esc(s.kvk || '—')}</div><div><span class="muted">Btw</span> ${esc(s.btw || '—')}</div><div><span class="muted">Adres</span> ${esc([s.adres, [s.postcode, s.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}</div><div><span class="muted">Contact</span> ${esc(s.contact_naam)}${s.contact_functie ? ' (' + esc(s.contact_functie) + ')' : ''} · <span class="mono">${esc(s.contact_email)}</span>${s.contact_tel ? ' · ' + esc(s.contact_tel) : ''}</div><div><span class="muted">Facturen naar</span> <span class="mono">${esc(s.factuur_email || s.contact_email)}</span></div>${s.startdatum ? `<div><span class="muted">Start</span> ${fmtDay(s.startdatum)}</div>` : ''}${s.opmerkingen ? `<div><span class="muted">Opmerkingen</span> ${esc(s.opmerkingen)}</div>` : ''}</div>
+          <div class="fields" style="margin-top:8px"><label class="field"><span>Plekken</span><input type="number" min="0" max="100000" value="${s.plekken}" data-schoolplek="${s.id}"></label><label class="field"><span>Prijs per plek (€)</span><input inputmode="decimal" value="${s.prijs_per_plek != null ? Number(s.prijs_per_plek).toFixed(2).replace('.', ',') : ''}" data-schoolprijs="${s.id}" placeholder="—"></label><label class="field"><span>E-maildomeinen</span><input value="${esc((s.domeinen || []).join(', '))}" data-schooldom="${s.id}"></label></div>
+          ${wait.length ? `<div class="small" style="margin-top:6px"><b>Wachtlijst:</b> ${wait.map(w => esc(w.name || w.email) + ' <span class="muted mono">' + esc(w.email) + '</span>').join(', ')}</div>` : ''}` : ''}</div>
+        <div class="row" style="align-self:flex-start">${wait.length && free ? `<button class="btn sm hl" data-act="schooltoelaten" data-id="${s.id}" ${S.busy ? 'disabled' : ''}>Laat ${Math.min(free, wait.length)} toe</button>` : ''}<button class="btn sm ghost" data-act="schoolopen" data-id="${s.id}">${open ? 'Sluiten' : 'Details & aanpassen'}</button><button class="link small" data-act="schoolstatus" data-id="${s.id}">${s.status === 'actief' ? 'Pauzeer' : 'Activeer'}</button></div></div>`; }).join('')}</div>
+    ${tot ? `<p class="small muted">Totaal te factureren (plekken in gebruik × prijs per plek): <b>€ ${tot.toFixed(2).replace('.', ',')}</b> per periode.</p>` : ''}
+    <p class="small muted">Tellen als plek: actieve studentaccounts van de school. Docenten tellen niet mee. Een gepauzeerde school: haar studenten kunnen niet meer inloggen.</p></section>`;
+}
 async function loadAdmin() {
   if (S.admin.loading) return; S.admin.loading = true;
-  try { S.admin.rows = await q(sb.rpc('admin_overview')); await loadAdminKlassen(); }
+  try { S.admin.rows = await q(sb.rpc('admin_overview')); await loadAdminKlassen(); await loadScholen(); }
   catch (e) { console.error(e); toast('Accounts laden lukte niet.'); S.admin.rows = []; }
   try { await loadRequests(); } catch (e) { console.error(e); }
   S.admin.loading = false; render();
@@ -1725,6 +2000,7 @@ async function adminFn(body) {
 async function adminCreate() {
   const A = S.admin; const role = A.newRole; const groep = $('#adGroep').value.trim(); const limit = +$('#adLimit').value || 60; const sendMail = $('#adMail').checked;
   const klas_id = role === 'student' && $('#adKlas') ? ($('#adKlas').value || null) : null; A.lastKlas = klas_id || '';
+  const gratis = $('#adGratis') ? $('#adGratis').checked : false;
   let list = [];
   if (A.bulk) list = $('#adBulk').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const p = l.split(/[;,\t]/).map(x => x.trim()); return p.length > 1 ? { name: p[0], email: p[1] } : { name: '', email: p[0] }; });
   else list = [{ email: $('#adEmail').value.trim(), name: $('#adName').value.trim() }];
@@ -1733,7 +2009,7 @@ async function adminCreate() {
   let ok = 0, mailed = 0; const fails = [];
   for (let i = 0; i < list.length; i++) {
     setBusy(`Account ${i + 1} van ${list.length} toevoegen…`);
-    try { const r = await adminFn({ action: 'create', email: list[i].email, name: list[i].name, role, groep, daily_ai_limit: limit, sendMail, klas_id }); ok++; if (r.mailed) mailed++; }
+    try { const r = await adminFn({ action: 'create', email: list[i].email, name: list[i].name, role, groep, daily_ai_limit: limit, sendMail, klas_id, gratis }); ok++; if (r.mailed) mailed++; }
     catch (e) { console.error('admin create', e); fails.push(`${list[i].email} (${e.error === 'exists' ? 'bestaat al' : e.error === 'bad_email' ? 'ongeldig adres' : e.error === 'db' ? 'databasefout: ' + (e.message || '') : (e.error || 'fout') + (e.message && e.message !== e.error ? ': ' + e.message : '')})`); }
   }
   setBusy(null);
@@ -2037,6 +2313,7 @@ function klassenSection() {
     ${ks.length ? `<div class="list">${ks.map(k => { const conf = S.confirm === 'klas:' + k.id; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}${k.school ? ` <span class="small muted">· ${esc(k.school)}</span>` : ''}</span>
       <span class="small muted">${plural(Number(k.leerlingen), 'leerling', 'leerlingen')} · ${plural(Number(k.opdrachten), 'opdracht', 'opdrachten')} · ${Number(k.lesstof)} lesstof</span>
       <div class="chips" style="margin-top:4px">${(k.docenten || []).map(e => { const d = (A.rows || []).find(r => r.email === e); return `<span class="pill">${esc(d && d.name ? d.name : e)} <button class="link small" data-act="klasunlink" data-klas="${k.id}" data-email="${esc(e)}" aria-label="Ontkoppel ${esc(e)}">✕</button></span>`; }).join('') || '<span class="small muted">Nog geen docent gekoppeld</span>'}</div>
+      ${'gratis' in k ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" data-klasgratis="${k.id}" ${k.gratis ? 'checked' : ''}> <b>Gratis klas</b> <span class="muted">(studenten in deze klas betalen niets)</span></label>` : ''}
       <div class="row" style="margin-top:6px"><select data-linksel="${k.id}" style="width:auto;max-width:100%"><option value="">Docent koppelen…</option>${docenten.filter(d => !(k.docenten || []).includes(d.email)).map(d => `<option value="${esc(d.email)}">${esc(d.name || d.email)}${d.role === 'admin' ? ' (beheerder)' : ''}</option>`).join('')}</select></div></div>
       ${conf ? `<span class="small">Klas verwijderen? Ook alle lesstof en opdrachten van deze klas worden gewist.</span><button class="btn sm danger" data-act="klasdel" data-id="${k.id}">Verwijder klas</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="link small" data-act="confirm" data-key="klas:${k.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : `<p class="small muted">Nog geen klassen. Maak een klas, koppel er docenten aan en zet studenten erin (bij Accounts).</p>`}
     ${docenten.filter(d => d.role === 'docent').length ? '' : `<p class="small muted">Er zijn nog geen docenten. Docenten vragen toegang aan via het inlogscherm ("Ik ben docent"), of je maakt ze hieronder aan met de rol Docent.</p>`}</section>`;
@@ -2261,6 +2538,25 @@ document.addEventListener('click', async e => {
   if (a === 'chatsend') { await sendChat(); return; }
   if (a === 'mic') { unlockSpeech(); if (V.listening) { stopListening(); } else startListening(false); return; }
   if (a === 'stopspeak') { stopSpeaking(); return; }
+  if (a === 'schoolopen') { S.admin.openSchool = S.admin.openSchool === d.id ? null : d.id; render(); return; }
+  if (a === 'schoolstatus') { const s = (S.admin.scholen || []).find(x => x.id === d.id); const st = s.status === 'actief' ? 'gepauzeerd' : 'actief'; try { await q(sb.from('scholen').update({ status: st }).eq('id', d.id)); s.status = st; toast(st === 'actief' ? `${s.naam} is weer actief.` : `${s.naam} is gepauzeerd. Studenten van deze school kunnen niet meer inloggen.`, 7000); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'schooltoelaten') { setBusy('Studenten toelaten…'); try { const r = await adminFn({ action: 'schooltoelaten', school_id: d.id }); toast(`${plural(r.toegelaten, 'student', 'studenten')} toegelaten en gemaild.`); await loadScholen(); S.admin.rows = null; } catch (err) { toast('Toelaten lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); render(); } return; }
+  if (a === 'schoolcsv') {
+    const A = S.admin; const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['School', 'KvK', 'Btw', 'Adres', 'Postcode', 'Plaats', 'Contactpersoon', 'E-mail contact', 'Factuur-e-mail', 'Status', 'Plekken', 'In gebruik', 'Prijs per plek', 'Bedrag'];
+    const lines = (A.scholen || []).map(s => { const used = A.seats[s.id] || 0; const pr = s.prijs_per_plek != null ? Number(s.prijs_per_plek) : null;
+      return [s.naam, s.kvk, s.btw, s.adres, s.postcode, s.plaats, s.contact_naam, s.contact_email, s.factuur_email || s.contact_email, s.status, s.plekken, used, pr != null ? pr.toFixed(2).replace('.', ',') : '', pr != null ? (pr * used).toFixed(2).replace('.', ',') : ''].map(cell).join(';'); });
+    download(`leerpuls-scholen-${todayStr()}.csv`, '﻿' + [head.map(cell).join(';'), ...lines].join('\r\n'), 'text/csv;charset=utf-8');
+    return;
+  }
+  if (a === 'abopay') { showGate('betalen', { toe: S.toegang, inApp: true }); window.scrollTo(0, 0); return; }
+  if (a === 'abocancel') {
+    setBusy('Abonnement opzeggen…');
+    try { await payFn({ action: 'cancel' }, true); S.confirm = null; S.toegang = await myToegang(); toast(`Je abonnement is opgezegd${S.toegang && S.toegang.betaald_tot ? `. Je kunt Leerpuls nog gebruiken tot en met ${fmtLong(S.toegang.betaald_tot)}` : ''}.`, 8000); }
+    catch (e) { toast('Opzeggen lukte niet' + (e.message ? ` (${e.message})` : '') + '. Probeer het opnieuw of mail ' + OWNER + '.', 8000); }
+    finally { setBusy(null); render(); }
+    return;
+  }
   if (a === 'teststem') { testStem(); return; }
   if (a === 'chattip') { await chatTip(); return; }
   if (a === 'chatend') { stopSpeaking(); stopListening(); await endChat(); return; }
@@ -2311,7 +2607,9 @@ document.addEventListener('click', async e => {
   if (a === 'reqapprove') {
     const r = (S.admin.reqs || []).find(x => x.id === d.id); setBusy(`Account aanmaken voor ${r ? r.name : ''}…`);
     const ksel = $('#reqKlas-' + d.id); const klassen = [...document.querySelectorAll(`[data-reqklas="${d.id}"]:checked`)].map(x => x.value);
-    try { const res = await adminFn({ action: 'approve', id: d.id, sendMail: true, klas_id: ksel ? ksel.value || null : null, klassen }); toast(res.existed ? 'Deze persoon had al een account; de aanvraag is afgesloten.' : `Goedgekeurd${res.mailed ? ' en welkomstmail verstuurd' : ''}.`); S.admin.rows = null; }
+    const gsel = $('#reqGratis-' + d.id);
+    const schoolExtra = r && r.type === 'school' ? { domeinen: ($('#rqDom-' + d.id) || {}).value, plekken: +(($('#rqPlek-' + d.id) || {}).value || 0), prijs_per_plek: (($('#rqPrijs-' + d.id) || {}).value || '').trim() } : {};
+    try { const res = await adminFn({ action: 'approve', id: d.id, sendMail: true, klas_id: ksel ? ksel.value || null : null, klassen, gratis: gsel ? gsel.checked : false, ...schoolExtra }); if (schoolExtra.domeinen !== undefined) await loadScholen(); toast(res.existed ? 'Deze persoon had al een account; de aanvraag is afgesloten.' : `Goedgekeurd${res.mailed ? ' en welkomstmail verstuurd' : ''}.`); S.admin.rows = null; }
     catch (err) { toast('Goedkeuren lukte niet: ' + (err.error === 'handled' ? 'deze aanvraag is al behandeld.' : (err.error || 'fout') + (err.message ? ' – ' + err.message : '')), 8000); await loadRequests(); }
     finally { setBusy(null); }
     return;
@@ -2350,6 +2648,16 @@ document.addEventListener('change', async e => {
   if (t.dataset && t.dataset.linksel) { if (!t.value) return; try { await q(sb.from('klas_docenten').insert({ klas_id: t.dataset.linksel, docent_email: t.value })); await loadAdminKlassen(); await loadKlasData(); toast('Docent gekoppeld aan de klas.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.klasof) { try { await q(sb.from('accounts').update({ klas_id: t.value || null }).eq('email', t.dataset.klasof)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.klasof); if (r) r.klas_id = t.value || null; await loadAdminKlassen(); toast(t.value ? `In klas ${klasNaam(t.value)} gezet.` : 'Uit de klas gehaald.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.rolesel) { try { await q(sb.from('accounts').update({ role: t.value }).eq('email', t.dataset.rolesel)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.rolesel); if (r) r.role = t.value; toast('Rol aangepast.'); render(); } catch (err) { dbErr(err); toast('Rol aanpassen lukte niet. Is docenten.sql al gedraaid?', 7000); } return; }
+  if (t.dataset && (t.dataset.schoolplek || t.dataset.schoolprijs || t.dataset.schooldom)) {
+    const id = t.dataset.schoolplek || t.dataset.schoolprijs || t.dataset.schooldom; let upd = {};
+    if (t.dataset.schoolplek) upd = { plekken: Math.max(0, Math.min(100000, Math.round(+t.value || 0))) };
+    if (t.dataset.schoolprijs) { const v = t.value.trim().replace(',', '.'); upd = { prijs_per_plek: v === '' ? null : Number(v) }; if (v !== '' && !isFinite(Number(v))) { toast('Vul een bedrag in, bijv. 3,50.'); return; } }
+    if (t.dataset.schooldom) { const doms = t.value.toLowerCase().split(/[\s,;]+/).map(x => x.replace(/^.*@/, '').trim()).filter(x => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(x)); if (!doms.length) { toast('Vul minstens één domein in, bijv. hsleiden.nl.'); return; } upd = { domeinen: doms }; }
+    try { await q(sb.from('scholen').update(upd).eq('id', id)); await loadScholen(); toast('Opgeslagen.'); render(); } catch (err) { dbErr(err); }
+    return;
+  }
+  if (t.dataset && t.dataset.gratis) { try { await q(sb.from('accounts').update({ gratis: t.checked }).eq('email', t.dataset.gratis)); toast(t.checked ? 'Gratis toegang aangezet.' : 'Gratis toegang uitgezet. Zonder gratis klas of abonnement moet deze student nu betalen.', 7000); S.admin.rows = null; loadAdmin(); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
+  if (t.dataset && t.dataset.klasgratis) { try { await q(sb.from('klassen').update({ gratis: t.checked }).eq('id', t.dataset.klasgratis)); toast(t.checked ? 'Deze klas is nu gratis.' : 'Deze klas is niet meer gratis.'); S.admin.rows = null; loadAdmin(); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
   if (t.id === 'vStem') { S.chat.stem = t.value; V.ttsOff = ''; stopSpeaking(); savePrefs(); testStem(); return; }
   if (t.id === 'vRead') { S.chat.read = t.checked; if (!t.checked) stopSpeaking(); else unlockSpeech(); savePrefs(); return; }
   if (t.id === 'vHands') { S.chat.hands = t.checked; if (t.checked) { S.chat.read = true; unlockSpeech(); } else stopListening(); savePrefs(); render(); return; }
@@ -2394,7 +2702,7 @@ document.addEventListener('paste', e => {
   if (!CONFIG_OK) { showGate('blocked', { reason: 'Leerpuls is nog niet gekoppeld aan Supabase. Vul in config.js je Supabase-URL en publishable key in.' }); return; }
   if (!sb) { showGate('blocked', { reason: 'De verbinding met Supabase kon niet worden opgezet. Controleer je internetverbinding en de gegevens in config.js.' }); return; }
   const { data: { session } } = await sb.auth.getSession();
-  if (session) await start(false); else showGate('email');
+  if (session) await start(false); else { showGate('email'); loadAboInfo().then(() => { if (!$('#gate').hidden && G.step === 'email' && aboOn()) renderGate(); }); }
 })();
 </script>
 </body>
