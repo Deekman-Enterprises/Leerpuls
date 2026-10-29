@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
-<meta name="lp-build" content="2026-10-29.2">
+<meta name="lp-build" content="2026-10-29.3">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -276,6 +276,7 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 body.modal-open{overflow:hidden}
 .newver{position:fixed;left:16px;right:16px;margin:0 auto;width:fit-content;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:15;background:var(--ink);color:var(--paper);border-radius:12px;padding:10px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 32px);box-shadow:0 20px 40px -15px rgba(0,0,0,.5)}
 .newver[hidden]{display:none}
+.fbbtn{white-space:nowrap}
 .newver .link{color:var(--paper)}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
@@ -787,7 +788,7 @@ async function start(viaCode) {
 }
 async function showApp() {
   $('#gate').hidden = true; $('#app').hidden = false;
-  render(); await loadAll(); if (S.isAdmin) await loadRequests(); await loadUpdates(); render();
+  render(); await loadAll(); if (S.isAdmin) await loadRequests(); await loadUpdates(); await loadFeedback(); render();
   setTimeout(showUpdatePopup, 600);
 }
 if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { started = false; showGate('email'); } });
@@ -1091,8 +1092,8 @@ function view() {
   let h = '';
   if (S.busy) h += `<div class="busy" role="status"><span class="dot"></span>${esc(S.busy)}</div>`;
   h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
-  <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
-  h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && pendingReqs().length ? `<span class="badge" aria-label="nieuwe aanvragen">${pendingReqs().length}</span>` : ''}</button>`).join('')}</nav>`;
+  <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<button class="link small fbbtn" data-act="fbopen" title="Idee, probleem of compliment? Laat het weten">💬 Feedback</button><span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
+  h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && (pendingReqs().length + fbNew()) ? `<span class="badge" aria-label="nieuwe aanvragen en feedback">${pendingReqs().length + fbNew()}</span>` : ''}</button>`).join('')}</nav>`;
   h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, school: vSchool, account: vAccount })[S.tab]();
   return h;
 }
@@ -1135,6 +1136,8 @@ function vVandaag() {
       <div><b>Oefen ermee</b><span class="muted small">Oefentoetsen met cijfer, flashcards, gesprekken en een leerplan tot je toets.</span></div></div>
       <div><button class="btn" data-act="tab" data-tab="vakken">Eerste vak aanmaken</button></div></section>`;
   }
+  if (S.isAdmin && fbNew()) h += `<div class="notice row between"><span><b>${plural(fbNew(), 'nieuw feedbackbericht', 'nieuwe feedbackberichten')}</b> van gebruikers.</span><button class="btn sm" data-act="fbgo">Bekijk</button></div>`;
+  h += fbAnswered();
   if (S.isAdmin && pendingReqs().length) h += `<div class="notice row between"><span><b>${plural(pendingReqs().length, 'nieuwe aanvraag', 'nieuwe aanvragen')}</b> voor Leerpuls.</span><button class="btn sm" data-act="tab" data-tab="beheer">Bekijk</button></div>`;
   h += installPanel('vandaag') + ktNotice() + consentCard() + opdrPanelStudent();
   if (isTeacher() && S.T.klassen.length) h += `<section class="panel"><div class="row between"><h3>Je klassen</h3><button class="btn sm" data-act="tab" data-tab="klassen">Naar Klassen</button></div><div class="list">${S.T.klassen.map(k => { const ops = S.opdr.filter(o => o.klas_id === k.id); const open = ops.filter(o => !o.deadline || o.deadline >= todayStr()).length; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}</span><span class="small muted">${plural(open, 'lopende opdracht', 'lopende opdrachten')} · ${S.kdocs.filter(d => d.klas_id === k.id).length} lesstof</span></div><button class="btn sm ghost" data-act="klassel" data-id="${k.id}" data-go="1">Open</button></div>`; }).join('')}</div></section>`;
@@ -1654,6 +1657,7 @@ function vBeheer() {
     ${'abo_status' in (rows[0] || {}) ? (() => { const n = rows.filter(r => r.abo_status === 'actief').length; const pr = ABO.info && ABO.info.prijs ? Number(ABO.info.prijs) : 0; return `<div class="stack" style="gap:2px"><span class="label">Betalende abonnees</span><span class="cijfer" style="font-size:2rem">${n}</span>${pr ? `<span class="small muted">≈ € ${(n * pr).toFixed(2).replace('.', ',')} per maand</span>` : ''}</div>`; })() : ''}</div>
     <p class="small muted">Je ziet alleen aantallen per student, nooit hun documenten, antwoorden of gesprekken.</p></section>
   ${reqSection()}
+  ${fbBeheer()}
   ${updatesBeheer()}
   ${scholenSection()}
   ${klassenSection()}
@@ -1771,6 +1775,7 @@ function vAccount() {
   <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label><div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
   <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw. Voorlezen met de natuurlijke stem telt niet mee.</p></section>
   ${installPanel('account')}
+  ${fbAccount()}
   ${updatesAccount()}
   <section class="panel"><h3>Privacy</h3><p class="small muted">Je stof, antwoorden en gesprekken zijn alleen voor jou zichtbaar. Beheerders zien alleen aantallen.</p><div class="row"><button class="btn ghost" data-act="export">Download al mijn gegevens</button><button class="btn" data-act="logout">Uitloggen</button></div></section>
   </div></div>`;
@@ -1848,6 +1853,96 @@ function updatesBeheer() {
     <div class="row"><button class="btn hl" data-act="updsave" ${S.busy ? 'disabled' : ''}>Aankondigen</button><button class="btn ghost" data-act="updpreview">Voorbeeld bekijken</button></div>
     ${list.length ? `<div class="list" style="margin-top:8px">${list.map(u => { const conf = S.confirm === 'upd:' + u.id; return `<div class="item"><div class="main"><span class="t">${esc(u.titel)} ${u.actief ? '' : '<span class="pill">verborgen</span>'}</span><span class="small muted">${fmtDate(u.created_at)} · ${u.doelgroep}</span></div>
       ${conf ? `<button class="btn sm danger" data-act="upddel" data-id="${u.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm ghost" data-act="updtoggle" data-id="${u.id}">${u.actief ? 'Verberg' : 'Toon weer'}</button><button class="link small" data-act="confirm" data-key="upd:${u.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : ''}</section>`;
+}
+
+
+/* ================= feedback en verbeterpunten (feedback.sql, Edge Function Admin) ================= */
+const FB_SOORT = { idee: '💡 Idee of verbetering', bug: '🐞 Iets werkt niet', compliment: '💛 Compliment', anders: '💬 Anders' };
+const FB_STATUS = { nieuw: 'Nieuw', bekeken: 'Bekeken', gepland: 'Mee bezig', opgelost: 'Opgelost', afgewezen: 'Niet nu' };
+const FB_DEEL = ['Vandaag', 'Agenda', 'Vakken en stof', "Foto's uploaden", 'Oefentoets', 'Flashcards', 'Gesprek oefenen', 'Praten en voorlezen', 'Uitleg & vragen', 'Klassen en opdrachten', 'Inloggen en account', 'Anders'];
+const TAB_DEEL = { vandaag: 'Vandaag', agenda: 'Agenda', vakken: 'Vakken en stof', toets: 'Oefentoets', kaarten: 'Flashcards', gesprek: 'Gesprek oefenen', uitleg: 'Uitleg & vragen', klassen: 'Klassen en opdrachten', account: 'Inloggen en account' };
+const fbNew = () => S.isAdmin ? (S.feedback || []).filter(f => f.status === 'nieuw').length : 0;
+async function loadFeedback() {
+  try { const { data, error } = await sb.from('feedback').select('*').order('created_at', { ascending: false }).limit(300); if (error) throw error; S.feedback = data || []; S.fbErr = false; }
+  catch (e) { S.feedback = []; S.fbErr = true; }
+}
+function apparaat() {
+  const ua = navigator.userAgent;
+  const os = /iPhone|iPad|iPod/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Anders';
+  const br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : 'browser';
+  return `${os} · ${br}${isStandalone() ? ' · app op beginscherm' : ''} · ${window.innerWidth}×${window.innerHeight}`;
+}
+function openFeedback(soort) {
+  S.fb = { soort: soort || 'idee', deel: TAB_DEEL[S.tab] || 'Anders', tekst: '', contact: true, busy: false, done: false };
+  renderFeedbackModal();
+}
+function renderFeedbackModal() {
+  const F = S.fb, el = $('#modal');
+  if (!F) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('modal-open'); return; }
+  el.innerHTML = `<div class="modal-bg" data-fb="close"></div><div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="fbT">
+    <div class="row between"><span class="label">Feedback</span><button class="link small" data-fb="close" aria-label="Sluiten">✕</button></div>
+    ${F.done ? `<h2 id="fbT">Bedankt! 🙌</h2><p>Je bericht is verstuurd. We lezen alles en laten het je weten bij <b>Account → Jouw feedback</b>${F.contact ? ' en per mail' : ''} als er een reactie is.</p><div><button class="btn hl" data-fb="close">Sluiten</button></div>`
+    : `<h2 id="fbT">Wat kan er beter?</h2><p class="small muted">Een idee, iets dat niet werkt of juist iets leuks: we horen het graag.</p>
+    <div class="chips" role="group" aria-label="Soort">${Object.entries(FB_SOORT).map(([k, l]) => `<button class="chip" data-fb="soort" data-v="${k}" aria-pressed="${F.soort === k}">${l}</button>`).join('')}</div>
+    <label class="field"><span>Over welk onderdeel?</span><select id="fbDeel">${FB_DEEL.map(d => `<option ${F.deel === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+    <label class="field"><span>${F.soort === 'bug' ? 'Wat ging er mis? Wat deed je net daarvoor?' : F.soort === 'compliment' ? 'Wat vind je goed?' : 'Wat zou je willen?'}</span><textarea id="fbTekst" rows="5" maxlength="3000" placeholder="${F.soort === 'bug' ? 'bijv. Bij gesprek oefenen stopt de microfoon na een paar seconden op mijn iPhone.' : 'bijv. Ik zou graag oefentoetsen willen kunnen printen.'}">${esc(F.tekst)}</textarea></label>
+    <label class="check"><input type="checkbox" id="fbContact" ${F.contact ? 'checked' : ''}><span>Je mag me mailen als je een vraag hebt of als het is opgelost</span></label>
+    <p class="small muted">We sturen automatisch mee welk apparaat en welke versie je gebruikt (${esc(apparaat())}), zodat we problemen sneller kunnen vinden. Nooit je stof of cijfers.</p>
+    <div class="row"><button class="btn hl" data-fb="send" ${F.busy ? 'disabled' : ''}>${F.busy ? 'Versturen…' : 'Verstuur'}</button><button class="btn ghost" data-fb="close">Annuleer</button></div>`}</div>`;
+  el.hidden = false; document.body.classList.add('modal-open');
+  if (!F.done) { const t = $('#fbTekst'); if (t && document.activeElement !== t) t.focus(); }
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-fb]'); if (!b || !S.fb) return;
+  const F = S.fb; const keep = () => { const t = $('#fbTekst'); if (t) F.tekst = t.value; const dl = $('#fbDeel'); if (dl) F.deel = dl.value; const c = $('#fbContact'); if (c) F.contact = c.checked; };
+  const a = b.dataset.fb;
+  if (a === 'close') { S.fb = null; renderFeedbackModal(); render(); return; }
+  if (a === 'soort') { keep(); F.soort = b.dataset.v; renderFeedbackModal(); return; }
+  if (a === 'send') {
+    keep();
+    if (F.tekst.trim().length < 3) { toast('Schrijf even wat je bedoelt.'); return; }
+    F.busy = true; renderFeedbackModal();
+    try { await adminFn({ action: 'feedback', soort: F.soort, onderdeel: F.deel, tekst: F.tekst.trim(), contact: F.contact, build: BUILD, apparaat: apparaat() }); F.done = true; await loadFeedback(); }
+    catch (err) { toast(err.error === 'busy' ? 'Je hebt vandaag al veel feedback gestuurd. Probeer het morgen weer.' : 'Versturen lukte niet. Probeer het opnieuw.', 7000); }
+    F.busy = false; renderFeedbackModal();
+  }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.fb) { S.fb = null; renderFeedbackModal(); } });
+function fbSeen() { try { return new Set(JSON.parse(localStorage.getItem('lp_fb_seen') || '[]')); } catch { return new Set(); } }
+function fbAnswered() {
+  if (!S.account) return '';
+  const seen = fbSeen(); const mine = (S.feedback || []).filter(f => f.email === S.account.email && f.antwoord && !seen.has(f.id + ':' + f.beantwoord_at));
+  if (!mine.length) return '';
+  const f = mine[0];
+  return `<section class="panel ktnew"><div class="row between"><h3>💬 Reactie op je feedback</h3><button class="link small" data-act="fbseen" data-id="${f.id}:${f.beantwoord_at}">Gelezen</button></div>
+    <p class="small muted">Jij schreef: "${esc(f.tekst.slice(0, 160))}${f.tekst.length > 160 ? '…' : ''}"</p><div class="quote">${esc(f.antwoord)}</div>
+    <div><span class="pill ${f.status === 'opgelost' ? 'good' : f.status === 'afgewezen' ? '' : 'warn'}">${FB_STATUS[f.status]}</span></div></section>`;
+}
+function fbAccount() {
+  if (S.fbErr) return '';
+  const mine = (S.feedback || []).filter(f => f.email === S.account.email).slice(0, 10);
+  return `<section class="panel"><div class="row between"><h3>Jouw feedback</h3><button class="btn sm hl" data-act="fbopen">💬 Geef feedback</button></div>
+    ${mine.length ? `<div class="list">${mine.map(f => `<div class="item"><div class="main"><span class="t">${FB_SOORT[f.soort].split(' ')[0]} ${esc(f.tekst.slice(0, 90))}${f.tekst.length > 90 ? '…' : ''}</span><span class="small muted">${fmtDate(f.created_at)}${f.onderdeel ? ' · ' + esc(f.onderdeel) : ''}</span>${f.antwoord ? `<div class="quote small">${esc(f.antwoord)}</div>` : ''}</div><span class="pill ${f.status === 'opgelost' ? 'good' : f.status === 'gepland' ? 'warn' : ''}">${FB_STATUS[f.status]}</span></div>`).join('')}</div>`
+      : `<p class="small muted">Mis je iets, werkt iets niet goed of heb je een goed idee? Laat het ons weten. We lezen alles.</p>`}</section>`;
+}
+function fbBeheer() {
+  if (S.fbErr) return `<section class="panel"><h3>Feedback</h3><div class="notice">Draai eerst <b>feedback.sql</b> in Supabase (SQL Editor).</div></section>`;
+  const all = S.feedback || []; const flt = S.fbFilter || 'open';
+  const shown = all.filter(f => flt === 'alles' ? true : flt === 'open' ? ['nieuw', 'bekeken', 'gepland'].includes(f.status) : f.status === flt);
+  const cnt = k => all.filter(f => k === 'open' ? ['nieuw', 'bekeken', 'gepland'].includes(f.status) : f.status === k).length;
+  return `<section class="panel" id="fbSection"><div class="row between"><h3>Feedback</h3><span class="label">${fbNew()} nieuw · ${all.length} totaal</span></div>
+    <div class="chips">${[['open', 'Open'], ['nieuw', 'Nieuw'], ['gepland', 'Mee bezig'], ['opgelost', 'Opgelost'], ['afgewezen', 'Niet nu'], ['alles', 'Alles']].map(([k, l]) => `<button class="chip" data-act="fbfilter" data-v="${k}" aria-pressed="${flt === k}">${l}${k !== 'alles' ? ` (${cnt(k)})` : ''}</button>`).join('')}</div>
+    ${shown.length ? `<div class="stack">${shown.slice(0, 60).map(f => { const open = S.fbOpen === f.id; const conf = S.confirm === 'fb:' + f.id;
+      return `<div class="req"><div class="row between"><b>${FB_SOORT[f.soort]}${f.onderdeel ? ` <span class="small muted">· ${esc(f.onderdeel)}</span>` : ''}</b><span class="pill ${f.status === 'nieuw' ? 'bad' : f.status === 'opgelost' ? 'good' : f.status === 'gepland' ? 'warn' : ''}">${FB_STATUS[f.status]}</span></div>
+        <div class="quote" style="white-space:pre-wrap">${esc(f.tekst)}</div>
+        <span class="small muted">${esc(f.name || '—')} · <span class="mono">${esc(f.email)}</span> · ${esc(f.rol)} · ${fmtDate(f.created_at)}${f.contact ? '' : ' · <b>liever geen contact</b>'}</span>
+        <span class="small muted">${esc(f.apparaat)}${f.build ? ' · versie ' + esc(f.build) : ''}</span>
+        ${f.antwoord && !open ? `<div class="small"><b>Jouw antwoord:</b> ${esc(f.antwoord)}</div>` : ''}
+        ${open ? `<div class="fields"><label class="field"><span>Status</span><select id="fbSt-${f.id}">${Object.entries(FB_STATUS).map(([k, l]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+          <label class="field"><span>Antwoord aan ${esc((f.name || '').split(' ')[0] || 'de gebruiker')} (optioneel)</span><textarea id="fbAns-${f.id}" rows="3" maxlength="3000" placeholder="bijv. Goed idee! We zetten het op de planning.">${esc(f.antwoord || '')}</textarea></label>
+          <div class="row"><button class="btn sm hl" data-act="fbsave" data-id="${f.id}" data-mail="1" ${f.contact ? '' : 'disabled title="Wil liever geen contact"'}>Opslaan en mailen</button><button class="btn sm" data-act="fbsave" data-id="${f.id}">Opslaan zonder mail</button><button class="btn sm ghost" data-act="fbtoggle" data-id="${f.id}">Annuleer</button></div>`
+        : `<div class="row">${f.status === 'nieuw' ? `<button class="btn sm ghost" data-act="fbstatus" data-id="${f.id}" data-v="bekeken">Markeer als bekeken</button>` : ''}<button class="btn sm" data-act="fbtoggle" data-id="${f.id}">Reageren / status</button>${conf ? `<button class="btn sm danger" data-act="fbdel" data-id="${f.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="link small" data-act="confirm" data-key="fb:${f.id}">Verwijder</button>`}</div>`}</div>`; }).join('')}</div>`
+      : `<p class="small muted">${flt === 'open' ? 'Geen open feedback. 🎉' : 'Niets in deze lijst.'}</p>`}</section>`;
 }
 
 /* ================= render ================= */
@@ -2820,6 +2915,21 @@ document.addEventListener('click', async e => {
   if (a === 'cdnow') { cancelCountdown(); await sendChat(); return; }
   if (a === 'cdwait') { cancelCountdown(); startListening(false); toast('Ga verder met praten. Tik op de microfoon als je klaar bent, of wacht op de stilte.'); return; }
   if (a === 'stopspeak') { stopSpeaking(); return; }
+  if (a === 'fbopen') { openFeedback(); return; }
+  if (a === 'fbgo') { S.tab = 'beheer'; S.fbFilter = 'nieuw'; render(); setTimeout(() => { const el = $('#fbSection'); if (el) el.scrollIntoView({ block: 'start' }); }, 50); return; }
+  if (a === 'fbfilter') { S.fbFilter = d.v; render(); return; }
+  if (a === 'fbtoggle') { S.fbOpen = S.fbOpen === d.id ? null : d.id; render(); return; }
+  if (a === 'fbseen') { const s2 = fbSeen(); s2.add(d.id); try { localStorage.setItem('lp_fb_seen', JSON.stringify([...s2].slice(-100))); } catch {} render(); return; }
+  if (a === 'fbstatus') { try { await q(sb.from('feedback').update({ status: d.v, updated_at: new Date().toISOString() }).eq('id', d.id)); await loadFeedback(); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'fbdel') { try { await q(sb.from('feedback').delete().eq('id', d.id)); S.confirm = null; await loadFeedback(); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'fbsave') {
+    const status = ($('#fbSt-' + d.id) || {}).value, antwoord = (($('#fbAns-' + d.id) || {}).value || '').trim();
+    setBusy('Opslaan…');
+    try { const r = await adminFn({ action: 'feedbackantwoord', id: d.id, status, antwoord, mail: d.mail === '1' }); S.fbOpen = null; await loadFeedback(); toast(r.mailed ? 'Opgeslagen en gemaild.' : 'Opgeslagen.'); }
+    catch (err) { toast('Opslaan lukte niet: ' + (err.error || 'fout'), 7000); }
+    finally { setBusy(null); render(); }
+    return;
+  }
   if (a === 'updsave' || a === 'updpreview') {
     const titel = ($('#updTitel').value || '').trim(), tekst = ($('#updTekst').value || '').trim();
     if (!titel) { toast('Geef de update een titel.'); return; }
