@@ -264,6 +264,7 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .seats{height:8px;background:var(--line);border-radius:8px;overflow:hidden;margin:6px 0 2px;max-width:320px}
 .seats i{display:block;height:100%;background:var(--good)}.seats i.vol{background:var(--bad)}
 .danger-link{color:var(--bad)}
+.ktnew{border-color:var(--hl);box-shadow:inset 4px 0 0 var(--hl)}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
 .check input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--ink)}
@@ -780,6 +781,7 @@ if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { started =
 async function loadAll() {
   setBusy('Je stof wordt geladen…');
   try {
+    try { await sb.rpc('klastoetsen_bijwerken'); } catch {} // toetsen die je docent voor je klas heeft ingepland
     const [vakken, docs, decks, results, sessions, exams, days] = await Promise.all([
       q(sb.from('vakken').select('*').order('created_at')),
       q(sb.from('documents').select('id,vak_id,title,chars,source,summary,file_path,file_name,created_at').order('created_at', { ascending: false })),
@@ -820,6 +822,8 @@ async function material(ids, max = 70000) {
 }
 const vak = id => S.vakken.find(v => v.id === id);
 const vakNaam = id => (vak(id) || {}).naam || 'Zonder vak';
+const examVak = e => e.vak_naam || vakNaam(e.vak_id);
+const klasToets = e => e && e.klastoets_id ? (S.ktoetsen || []).find(t => t.id === e.klastoets_id) || { id: e.klastoets_id, doc_ids: [] } : null;
 const vakColor = id => { const v = vak(id); return v ? `var(--v${v.kleur || 1})` : 'var(--line)'; };
 const commonVak = ids => { const s = [...new Set(S.docs.filter(d => ids.includes(d.id)).map(d => d.vak_id))]; return s.length === 1 ? s[0] : null; };
 
@@ -1117,18 +1121,18 @@ function vVandaag() {
       <div><button class="btn" data-act="tab" data-tab="vakken">Eerste vak aanmaken</button></div></section>`;
   }
   if (S.isAdmin && pendingReqs().length) h += `<div class="notice row between"><span><b>${plural(pendingReqs().length, 'nieuwe aanvraag', 'nieuwe aanvragen')}</b> voor Leerpuls.</span><button class="btn sm" data-act="tab" data-tab="beheer">Bekijk</button></div>`;
-  h += installPanel('vandaag') + consentCard() + opdrPanelStudent();
+  h += installPanel('vandaag') + ktNotice() + consentCard() + opdrPanelStudent();
   if (isTeacher() && S.T.klassen.length) h += `<section class="panel"><div class="row between"><h3>Je klassen</h3><button class="btn sm" data-act="tab" data-tab="klassen">Naar Klassen</button></div><div class="list">${S.T.klassen.map(k => { const ops = S.opdr.filter(o => o.klas_id === k.id); const open = ops.filter(o => !o.deadline || o.deadline >= todayStr()).length; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}</span><span class="small muted">${plural(open, 'lopende opdracht', 'lopende opdrachten')} · ${S.kdocs.filter(d => d.klas_id === k.id).length} lesstof</span></div><button class="btn sm ghost" data-act="klassel" data-id="${k.id}" data-go="1">Open</button></div>`; }).join('')}</div></section>`;
   if (S.vakken.length || S.photos.length) h += photoPanel(null, { withVak: true, mobileOnly: true, heading: "Snel foto's toevoegen" });
   h += `<div class="grid2">`;
-  if (tasks.length) h += `<section class="panel"><h3>Vandaag op je leerplan</h3><div class="plan">${tasks.map(({ e, t, i }) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span style="flex:1;display:grid;gap:2px"><span class="tt">${esc(t.taak)}</span><span class="small muted">${esc(e.naam)} · ${esc(vakNaam(e.vak_id))}${t.datum < today ? ' · ingehaald van ' + fmtDay(t.datum) : ''}</span></span></button>`).join('')}</div></section>`;
+  if (tasks.length) h += `<section class="panel"><h3>Vandaag op je leerplan</h3><div class="plan">${tasks.map(({ e, t, i }) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span style="flex:1;display:grid;gap:2px"><span class="tt">${esc(t.taak)}</span><span class="small muted">${esc(e.naam)} · ${esc(examVak(e))}${t.datum < today ? ' · ingehaald van ' + fmtDay(t.datum) : ''}</span></span></button>`).join('')}</div></section>`;
   h += `<section class="panel"><div class="row between"><h3>Toetsplanner</h3><span class="label">${plural(exams.length, 'toets', 'toetsen')}</span></div>
     ${exams.length ? `<div class="list">${exams.map(e => {
       const done = (e.plan || []).filter(t => t.done).length, tot = (e.plan || []).length; const conf = S.confirm === 'exam:' + e.id;
-      return `<div class="item"><div class="main"><span class="t row" style="gap:8px"><span class="vakdot" style="--vc:${vakColor(e.vak_id)}"></span>${esc(e.naam)}</span><span class="small muted">${esc(vakNaam(e.vak_id))} · ${new Date(e.datum + 'T00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}${tot ? ` · leerplan ${done}/${tot}` : ''}</span></div>
+      return `<div class="item"><div class="main"><span class="t row" style="gap:8px"><span class="vakdot" style="--vc:${vakColor(e.vak_id)}"></span>${esc(e.naam)}${e.klastoets_id ? ' <span class="pill">van je docent</span>' : ''}</span><span class="small muted">${esc(examVak(e))} · ${new Date(e.datum + 'T00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}${tot ? ` · leerplan ${done}/${tot}` : ''}</span></div>
       <span class="pill ${e.days <= 3 ? 'bad' : e.days <= 10 ? 'warn' : ''}">${e.days === 0 ? 'vandaag' : e.days === 1 ? 'morgen' : 'nog ' + e.days + ' dagen'}</span><button class="btn sm ghost" data-act="ics" data-id="${e.id}" title="Zet deze toets in je eigen agenda" aria-label="Zet ${esc(e.naam)} in je eigen agenda">📅</button>
       ${conf ? `<button class="btn sm danger" data-act="examdel" data-id="${e.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` :
-      `<button class="btn sm" data-act="examquiz" data-vak="${e.vak_id || ''}">Oefen</button>${tot ? `<button class="btn sm ghost" data-act="planopen" data-id="${e.id}">${S.openPlan === e.id ? 'Sluit plan' : 'Leerplan'}</button>` : `<button class="btn sm ghost" data-act="planmake" data-id="${e.id}" ${S.busy ? 'disabled' : ''}>Maak leerplan</button>`}<button class="link small" data-act="confirm" data-key="exam:${e.id}">Verwijder</button>`}
+      `<button class="btn sm" data-act="${e.klastoets_id ? 'ktquiz' : 'examquiz'}" data-vak="${e.vak_id || ''}" data-kt="${e.klastoets_id || ''}">Oefen</button>${tot ? `<button class="btn sm ghost" data-act="planopen" data-id="${e.id}">${S.openPlan === e.id ? 'Sluit plan' : 'Leerplan'}</button>` : `<button class="btn sm ghost" data-act="planmake" data-id="${e.id}" ${S.busy ? 'disabled' : ''}>Maak leerplan</button>`}${e.klastoets_id ? '' : `<button class="link small" data-act="confirm" data-key="exam:${e.id}">Verwijder</button>`}`}
       ${S.openPlan === e.id && tot ? `<div class="plan" style="flex-basis:100%">${e.plan.map((t, i) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span class="tt" style="flex:1">${esc(t.taak)}</span><span class="d">${fmtDay(t.datum)}</span></button>`).join('')}<div><button class="link small" data-act="planmake" data-id="${e.id}">Maak een nieuw leerplan</button></div></div>` : ''}</div>`;
     }).join('')}</div>` : `<p class="muted small">Zet je toetsen erin. Je ziet hoeveel dagen je nog hebt en Leerpuls maakt een leerplan per dag tot de toets.</p>`}
     <div class="fields"><label class="field"><span>Vak</span><select id="exVak">${vakOptions(null)}</select></label><label class="field"><span>Toets</span><input id="exNaam" placeholder="bijv. Tentamen blok 2"></label><label class="field"><span>Datum</span><input id="exDatum" type="date" min="${todayStr()}"></label><label class="field"><span>Tijd (optioneel)</span><input id="exTijd" type="time"></label></div>
@@ -1969,12 +1973,13 @@ async function makePlan(examId) {
   const e = S.exams.find(x => x.id === examId); if (!e) return;
   const dLeft = daysUntil(e.datum);
   if (dLeft < 1) { toast('De toets is vandaag; daar past geen leerplan meer in. Succes!'); return; }
-  const ids = S.docs.filter(d => d.vak_id === e.vak_id).map(d => d.id);
+  const kt = klasToets(e);
+  const ids = kt ? (kt.doc_ids || []).filter(i => S.kdocs.some(d => d.id === i)) : S.docs.filter(d => d.vak_id === e.vak_id).map(d => d.id);
   const start = new Date(); if (dLeft > 21) start.setDate(start.getDate() + dLeft - 21);
   setBusy('Je leerplan wordt gemaakt…');
   try {
     const stof = ids.length ? await material(ids, 25000) : '(nog geen stof toegevoegd)';
-    const r = await aiJson({ kind: 'leerplan', prompt: `Maak een realistisch leerplan in het Nederlands voor een hbo-student die toets "${e.naam}" (vak ${vakNaam(e.vak_id)}) heeft op ${e.datum}. Plan één taak per dag van ${start.toLocaleDateString('sv-SE')} tot en met de dag vóór de toets. Elke taak is concreet en kost 20 tot 60 minuten, bijvoorbeeld een hoofdstuk lezen, flashcards herhalen, een oefentoets maken, een samenvatting schrijven of een mondeling oefenen. Begin met begrijpen, eindig met oefenen en herhalen; plan de laatste dag licht.
+    const r = await aiJson({ kind: 'leerplan', prompt: `Maak een realistisch leerplan in het Nederlands voor een hbo-student die toets "${e.naam}" (vak ${examVak(e)}) heeft op ${e.datum}. Plan één taak per dag van ${start.toLocaleDateString('sv-SE')} tot en met de dag vóór de toets. Elke taak is concreet en kost 20 tot 60 minuten, bijvoorbeeld een hoofdstuk lezen, flashcards herhalen, een oefentoets maken, een samenvatting schrijven of een mondeling oefenen. Begin met begrijpen, eindig met oefenen en herhalen; plan de laatste dag licht.
 Beschikbare documenten: ${S.docs.filter(d => ids.includes(d.id)).map(d => d.title).join(', ') || 'geen'}.
 Antwoord met alleen JSON: {"plan":[{"datum":"YYYY-MM-DD","taak":"..."}]}
 
@@ -2135,10 +2140,71 @@ async function loadKlasData() {
       op.push(...await q(sb.from('opdrachten').select('*').in('klas_id', ids).order('created_at', { ascending: false })));
     }
     S.kdocs = kd; S.opdr = op;
+    S.ktoetsen = [];
+    if (klasIds.size) { const { data: kts, error: ke } = await sb.from('klas_toetsen').select('*').in('klas_id', [...klasIds]).order('datum'); S.ktoetsen = ke ? [] : (kts || []); S.ktErr = !!ke; }
     S.myRes = await q(sb.from('opdracht_resultaten').select('*').eq('user_id', S.user.id).order('created_at', { ascending: false }));
   } catch (e) {
     console.warn('klasdata', e); S.klasErr = true; S.klas = null; S.kdocs = []; S.opdr = []; S.myRes = [];
   }
+}
+
+/* ---- toetsen die de docent voor de klas heeft ingepland ---- */
+function ktSeen() { try { return new Set(JSON.parse(localStorage.getItem('lp_kt_seen') || '[]')); } catch { return new Set(); } }
+function ktNotice() {
+  if (!S.klas) return '';
+  const seen = ktSeen(); const week = Date.now() - 7 * 864e5;
+  const nieuw = (S.ktoetsen || []).filter(t => t.klas_id === S.klas.klas_id && daysUntil(t.datum) >= 0 && new Date(t.created_at).getTime() > week && !seen.has(t.id));
+  if (!nieuw.length) return '';
+  return nieuw.map(t => { const ex = S.exams.find(e => e.klastoets_id === t.id); const dl = daysUntil(t.datum);
+    return `<section class="panel ktnew"><div class="row between"><h3>📅 Nieuwe toets van je docent</h3><button class="link small" data-act="ktseen" data-id="${t.id}">Gezien</button></div>
+    <p><b>${esc(t.naam)}</b>${t.vak ? ` (${esc(t.vak)})` : ''} op <b>${new Date(t.datum + 'T00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}</b>${t.tijd ? ' om ' + t.tijd.slice(0, 5) : ''}${t.locatie ? ' · ' + esc(t.locatie) : ''} <span class="pill ${dl <= 3 ? 'bad' : dl <= 10 ? 'warn' : ''}">${dl === 0 ? 'vandaag' : dl === 1 ? 'morgen' : 'nog ' + dl + ' dagen'}</span></p>
+    ${t.uitleg ? `<div class="quote">${esc(t.uitleg)}</div>` : ''}
+    <p class="small muted">Hij staat al in je toetsplanner en agenda${(t.doc_ids || []).length ? `, met ${plural(t.doc_ids.length, 'stuk', 'stukken')} lesstof om mee te oefenen` : ''}.</p>
+    <div class="row"><button class="btn sm hl" data-act="ktquiz" data-kt="${t.id}">Oefentoets maken</button>${ex && !(ex.plan || []).length ? `<button class="btn sm ghost" data-act="planmake" data-id="${ex.id}" ${S.busy ? 'disabled' : ''}>Maak leerplan</button>` : ''}<button class="btn sm ghost" data-act="tab" data-tab="agenda">Naar agenda</button></div></section>`; }).join('');
+}
+function klasToetsenTab(k) {
+  const T = S.T; const ts = (S.ktoetsen || []).filter(t => t.klas_id === k.id);
+  if (S.ktErr) return `<section class="panel"><div class="notice">Toetsen inplannen is nog niet ingesteld. De beheerder moet <b>klastoetsen.sql</b> in Supabase draaien.</div></section>`;
+  const ds = S.kdocs.filter(d => d.klas_id === k.id); T.tpick = T.tpick || new Set();
+  const komend = ts.filter(t => daysUntil(t.datum) >= 0), voorbij = ts.filter(t => daysUntil(t.datum) < 0).reverse();
+  const card = t => { const dl = daysUntil(t.datum); const conf = S.confirm === 'kt:' + t.id;
+    return `<div class="item"><div class="main"><span class="t">📝 ${esc(t.naam)}${t.vak ? ` <span class="small muted">· ${esc(t.vak)}</span>` : ''}</span><span class="small muted">${new Date(t.datum + 'T00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}${t.tijd ? ' om ' + t.tijd.slice(0, 5) : ''}${t.locatie ? ' · ' + esc(t.locatie) : ''}${(t.doc_ids || []).length ? ` · ${plural(t.doc_ids.length, 'stuk', 'stukken')} lesstof` : ''}</span>${t.uitleg ? `<span class="small">${esc(t.uitleg)}</span>` : ''}</div>
+      ${dl >= 0 ? `<span class="pill ${dl <= 3 ? 'bad' : dl <= 10 ? 'warn' : ''}">${dl === 0 ? 'vandaag' : dl === 1 ? 'morgen' : 'nog ' + dl + ' dagen'}</span>` : '<span class="pill">geweest</span>'}
+      ${conf ? `<span class="small">Verwijderen? Hij verdwijnt ook uit de planner van de leerlingen.</span><button class="btn sm danger" data-act="ktdel" data-id="${t.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm ghost" data-act="ktedit" data-id="${t.id}">Wijzig</button><button class="link small" data-act="confirm" data-key="kt:${t.id}">Verwijder</button>`}</div>`; };
+  const ed = T.ktEdit ? ts.find(t => t.id === T.ktEdit) : null;
+  return `<section class="panel"><h3>${ed ? 'Toets wijzigen' : 'Toets inplannen voor ' + esc(k.naam)}</h3>
+    <p class="small muted">${ed ? 'Wijzigingen komen meteen in de planner en agenda van alle leerlingen.' : 'Alle leerlingen van deze klas krijgen de toets meteen in hun toetsplanner en agenda, en een mail. Daarna krijgen ze herinneringen 20, 10 en 5 dagen van tevoren en de dag ervoor.'}</p>
+    <div class="fields"><label class="field"><span>Naam van de toets</span><input id="ktNaam" maxlength="120" placeholder="bijv. Tentamen Marketing blok 2" value="${esc(ed ? ed.naam : '')}"></label><label class="field"><span>Vak (optioneel)</span><input id="ktVak" maxlength="60" placeholder="bijv. Marketing" value="${esc(ed ? ed.vak : '')}"></label></div>
+    <div class="fields"><label class="field"><span>Datum</span><input id="ktDatum" type="date" min="${todayStr()}" value="${ed ? ed.datum : ''}"></label><label class="field"><span>Tijd (optioneel)</span><input id="ktTijd" type="time" value="${ed && ed.tijd ? ed.tijd.slice(0, 5) : ''}"></label><label class="field"><span>Lokaal of locatie (optioneel)</span><input id="ktLoc" maxlength="80" placeholder="bijv. Zaal 2.14" value="${esc(ed ? ed.locatie : '')}"></label></div>
+    <label class="field"><span>Wat moeten ze leren? (optioneel)</span><textarea id="ktUitleg" maxlength="1000" placeholder="bijv. Hoofdstuk 1 t/m 4 en de begrippenlijst. Neem een rekenmachine mee.">${esc(ed ? ed.uitleg : '')}</textarea></label>
+    ${ds.length ? `<div class="picker"><span class="label">Lesstof om mee te oefenen (optioneel)</span><div class="chips">${ds.map(d => `<button class="chip" data-act="ktpick" data-id="${d.id}" aria-pressed="${T.tpick.has(d.id)}" title="${esc(d.title)}">${esc(d.vak)} · ${esc(d.title)}</button>`).join('')}</div><span class="small muted">Leerlingen maken daarmee met één klik een oefentoets en een leerplan.</span></div>` : `<p class="small muted">Tip: deel lesstof bij het tabblad Lesstof, dan kunnen leerlingen er meteen mee oefenen voor deze toets.</p>`}
+    <div class="row"><button class="btn hl" data-act="ktsave" ${S.busy ? 'disabled' : ''}>${ed ? 'Wijzigingen opslaan' : 'Toets inplannen en leerlingen inlichten'}</button>${ed ? '<button class="btn ghost" data-act="ktcancel">Annuleer</button>' : ''}</div></section>
+    <section class="panel"><div class="row between"><h3>Ingeplande toetsen</h3><span class="label">${komend.length}</span></div>${komend.length ? `<div class="list">${komend.map(card).join('')}</div>` : '<p class="small muted">Nog geen toetsen ingepland voor deze klas.</p>'}
+    ${voorbij.length ? `<details><summary class="link small" style="cursor:pointer">Geweest (${voorbij.length})</summary><div class="list" style="margin-top:8px">${voorbij.map(card).join('')}</div></details>` : ''}</section>`;
+}
+async function saveKlasToets() {
+  const T = S.T; const klas_id = T.sel; const naam = ($('#ktNaam').value || '').trim(); const datum = $('#ktDatum').value;
+  if (!naam) { toast('Geef de toets een naam.'); return; }
+  if (!datum) { toast('Kies een datum.'); return; }
+  const row = { klas_id, naam, vak: $('#ktVak').value.trim(), datum, tijd: $('#ktTijd').value || null, locatie: $('#ktLoc').value.trim(), uitleg: $('#ktUitleg').value.trim(), doc_ids: [...(T.tpick || [])] };
+  setBusy(T.ktEdit ? 'Toets bijwerken…' : 'Toets inplannen…');
+  try {
+    if (T.ktEdit) { await q(sb.from('klas_toetsen').update(row).eq('id', T.ktEdit)); toast('Toets bijgewerkt. Hij is aangepast bij alle leerlingen.'); T.ktEdit = null; }
+    else {
+      const ins = await q(sb.from('klas_toetsen').insert(row).select('id').single());
+      let msg = `Toets ingepland voor ${klasNaam(klas_id)}.`;
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        const res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.REMINDER_FUNCTION || 'Herinneringen'}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY }, body: JSON.stringify({ action: 'klastoets', id: ins.id }) });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok) msg += ` ${plural(j.leerlingen || 0, 'leerling heeft', 'leerlingen hebben')} hem in de planner${j.sent ? `, ${plural(j.sent, 'mail', 'mails')} verstuurd` : ''}.`;
+        else msg += ' Leerlingen krijgen binnen 15 minuten een mail.';
+      } catch { msg += ' Leerlingen krijgen binnen 15 minuten een mail.'; }
+      toast(msg, 8000);
+    }
+    T.tpick = new Set(); await loadKlasData();
+  } catch (e) { dbErr(e); }
+  finally { setBusy(null); render(); }
 }
 
 /* ---- student: toestemming, opdrachten, lesstof ---- */
@@ -2212,8 +2278,9 @@ function vKlassen() {
   const k = T.klassen.find(x => x.id === T.sel) || T.klassen[0]; T.sel = k.id;
   let h = `<div class="stack"><div class="row between"><h2>Klassen</h2><button class="btn sm ghost" data-act="klasreload">Vernieuwen</button></div>`;
   if (T.klassen.length > 1) h += `<div class="chips">${T.klassen.map(x => `<button class="chip" data-act="klassel" data-id="${x.id}" aria-pressed="${x.id === k.id}">${esc(x.naam)}</button>`).join('')}</div>`;
-  h += `<section class="panel"><div class="row between"><h3>${esc(k.naam)}</h3><span class="small muted">${esc(k.school || '')}</span></div>${seg('T.sub', T.sub, [['opdrachten', 'Opdrachten'], ['lesstof', 'Lesstof'], ['leerlingen', 'Leerlingen']])}</section>`;
-  if (T.sub === 'lesstof') h += klasLesstof(k);
+  h += `<section class="panel"><div class="row between"><h3>${esc(k.naam)}</h3><span class="small muted">${esc(k.school || '')}</span></div>${seg('T.sub', T.sub, [['opdrachten', 'Opdrachten'], ['toetsen', 'Toetsen'], ['lesstof', 'Lesstof'], ['leerlingen', 'Leerlingen']])}</section>`;
+  if (T.sub === 'toetsen') h += klasToetsenTab(k);
+  else if (T.sub === 'lesstof') h += klasLesstof(k);
   else if (T.sub === 'leerlingen') h += klasLeerlingen(k);
   else h += klasOpdrachten(k);
   return h + `</div>`;
@@ -2394,10 +2461,11 @@ const DAGEN = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
 function agendaItems() {
   const out = [];
   for (const e of S.exams) {
-    out.push({ date: e.datum, kind: 'toets', id: e.id, title: e.naam, sub: [vakNaam(e.vak_id), e.tijd ? e.tijd.slice(0, 5) : '', e.locatie].filter(Boolean).join(' · '), time: e.tijd || '' });
+    out.push({ date: e.datum, kind: 'toets', id: e.id, title: e.naam, sub: [examVak(e) + (e.klastoets_id ? ' · van je docent' : ''), e.tijd ? e.tijd.slice(0, 5) : '', e.locatie].filter(Boolean).join(' · '), time: e.tijd || '' });
     (e.plan || []).forEach((t, i) => out.push({ date: t.datum, kind: 'plan', id: e.id, i, title: t.taak, sub: 'Leerplan · ' + e.naam, done: t.done }));
   }
   for (const o of myOpdr()) if (o.deadline) out.push({ date: o.deadline, kind: 'opdr', id: o.id, title: o.titel, sub: 'Opdracht inleveren · ' + TYPE_LABEL[o.type], done: opdrResults(o.id).length > 0 });
+  if (isTeacher()) { const mine = new Set(S.T.klassen.map(k => k.id)); for (const t of S.ktoetsen || []) if (mine.has(t.klas_id) && !(S.klas && t.klas_id === S.klas.klas_id)) out.push({ date: t.datum, kind: 'deadline', id: t.id, title: '📝 ' + t.naam, sub: 'Toets · ' + klasNaam(t.klas_id) + (t.tijd ? ' · ' + t.tijd.slice(0, 5) : ''), time: t.tijd || '' }); }
   if (isTeacher()) { const mine = new Set(S.T.klassen.map(k => k.id)); for (const o of S.opdr) if (o.deadline && mine.has(o.klas_id) && !(S.klas && o.klas_id === S.klas.klas_id)) out.push({ date: o.deadline, kind: 'deadline', id: o.id, title: o.titel, sub: 'Deadline · ' + klasNaam(o.klas_id) }); }
   const order = { toets: 0, opdr: 1, deadline: 2, plan: 3 };
   return out.filter(x => x.date).sort((a, b) => a.date.localeCompare(b.date) || order[a.kind] - order[b.kind] || (a.time || '').localeCompare(b.time || ''));
@@ -2409,10 +2477,10 @@ function agendaUrl() {
 }
 function agItem(x) {
   let act = '';
-  if (x.kind === 'toets') act = `<button class="btn sm ghost" data-act="examquiz" data-vak="${(S.exams.find(e => e.id === x.id) || {}).vak_id || ''}">Oefen</button><button class="btn sm ghost" data-act="ics" data-id="${x.id}" title="Zet deze toets in je eigen agenda">📅 In agenda</button>`;
+  if (x.kind === 'toets') { const ex = S.exams.find(e => e.id === x.id) || {}; act = `<button class="btn sm ghost" data-act="${ex.klastoets_id ? 'ktquiz' : 'examquiz'}" data-vak="${ex.vak_id || ''}" data-kt="${ex.klastoets_id || ''}">Oefen</button>`; act += `<button class="btn sm ghost" data-act="ics" data-id="${x.id}" title="Zet deze toets in je eigen agenda">📅 In agenda</button>`; }
   if (x.kind === 'plan') act = `<button class="btn sm ${x.done ? 'ghost' : ''}" data-act="plantoggle" data-exam="${x.id}" data-i="${x.i}">${x.done ? 'Gedaan ✓' : 'Afvinken'}</button>`;
   if (x.kind === 'opdr') act = `<button class="btn sm ${x.done ? 'ghost' : 'hl'}" data-act="opdrstart" data-id="${x.id}">${x.done ? 'Opnieuw' : 'Start'}</button>`;
-  if (x.kind === 'deadline') act = `<button class="btn sm ghost" data-act="klassel" data-id="${(S.opdr.find(o => o.id === x.id) || {}).klas_id}" data-go="1">Bekijk</button>`;
+  if (x.kind === 'deadline') act = `<button class="btn sm ghost" data-act="klassel" data-id="${(S.opdr.find(o => o.id === x.id) || (S.ktoetsen || []).find(t => t.id === x.id) || {}).klas_id}" data-go="1">Bekijk</button>`;
   return `<div class="item ag-${x.kind}"><div class="main"><span class="t">${AG_ICON[x.kind]} ${esc(x.title)}${x.done && x.kind !== 'plan' ? ' <span class="pill good">gemaakt</span>' : ''}</span><span class="small muted">${esc(x.sub)}</span></div>${act}</div>`;
 }
 function vAgenda() {
@@ -2469,7 +2537,7 @@ function addDaysStr(s, n) { const d = new Date(s + 'T12:00'); d.setDate(d.getDat
 function icsEscape(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
 function icsFold(line) { const enc = new TextEncoder(); if (enc.encode(line).length <= 75) return line; const out = []; let cur = '', len = 0, lim = 75; for (const ch of line) { const n = enc.encode(ch).length; if (len + n > lim) { out.push(cur); cur = ''; len = 0; lim = 74; } cur += ch; len += n; } out.push(cur); return out.join('\r\n '); }
 function examIcs(e) {
-  const vak = e.vak_id ? vakNaam(e.vak_id) : ''; const d8 = e.datum.replace(/-/g, ''); const next = addDaysStr(e.datum, 1).replace(/-/g, '');
+  const vak = e.vak_naam || (e.vak_id ? vakNaam(e.vak_id) : ''); const d8 = e.datum.replace(/-/g, ''); const next = addDaysStr(e.datum, 1).replace(/-/g, '');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   const TZ = ['BEGIN:VTIMEZONE', 'TZID:Europe/Amsterdam', 'BEGIN:DAYLIGHT', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0200', 'TZNAME:CEST', 'DTSTART:19700329T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU', 'END:DAYLIGHT', 'BEGIN:STANDARD', 'TZOFFSETFROM:+0200', 'TZOFFSETTO:+0100', 'TZNAME:CET', 'DTSTART:19701025T030000', 'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU', 'END:STANDARD', 'END:VTIMEZONE'];
   const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Deekman Enterprises//Leerpuls//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...(e.tijd ? TZ : []), 'BEGIN:VEVENT', `UID:toets-${e.id}@leerpuls.deekmanenterprises.com`, `DTSTAMP:${stamp}`];
@@ -2676,6 +2744,18 @@ document.addEventListener('click', async e => {
   if (a === 'kpaste') { const t = $('#kText'); if (!t.value.trim()) { toast('Plak eerst de lesstof in het vak.'); return; } const vk = ($('#kVak').value.trim()) || 'Algemeen'; S.T.vak = vk; setBusy('Lesstof delen…'); try { if (await addKlasDoc({ klasId: S.T.sel, vak: vk, title: $('#kTitle').value.trim() || `Lesstof ${fmtDate(Date.now())}`, text: t.value, source: 'geplakt' })) { t.value = ''; $('#kTitle').value = ''; } } finally { setBusy(null); } return; }
   if (a === 'kdocdel') { const doc = S.kdocs.find(x => x.id === d.id); await q(sb.from('klas_docs').delete().eq('id', d.id)); if (doc && doc.file_path) sb.storage.from('klasstof').remove([doc.file_path]); S.kdocs = S.kdocs.filter(x => x.id !== d.id); S.confirm = null; render(); toast('Lesstof verwijderd.'); return; }
   if (a === 'kdocfile') { const w = window.open('', '_blank'); const doc = S.kdocs.find(x => x.id === d.id); const { data, error } = await sb.storage.from('klasstof').createSignedUrl(doc.file_path, 120); if (error) { if (w) w.close(); toast('Het originele bestand kon niet geopend worden.'); return; } if (w) w.location = data.signedUrl; else location.href = data.signedUrl; return; }
+  if (a === 'ktpick') { const s2 = S.T.tpick = S.T.tpick || new Set(); s2.has(d.id) ? s2.delete(d.id) : s2.add(d.id); render(); return; }
+  if (a === 'ktsave') { await saveKlasToets(); return; }
+  if (a === 'ktedit') { const t = (S.ktoetsen || []).find(x => x.id === d.id); if (!t) return; S.T.ktEdit = t.id; S.T.tpick = new Set(t.doc_ids || []); render(); window.scrollTo(0, 0); return; }
+  if (a === 'ktcancel') { S.T.ktEdit = null; S.T.tpick = new Set(); render(); return; }
+  if (a === 'ktdel') { try { await q(sb.from('klas_toetsen').delete().eq('id', d.id)); S.confirm = null; toast('Toets verwijderd, ook bij de leerlingen.'); await loadKlasData(); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'ktseen') { const s2 = ktSeen(); s2.add(d.id); try { localStorage.setItem('lp_kt_seen', JSON.stringify([...s2].slice(-100))); } catch {} render(); return; }
+  if (a === 'ktquiz') {
+    const t = (S.ktoetsen || []).find(x => x.id === d.kt); const ids = t ? (t.doc_ids || []).filter(i => S.kdocs.some(x => x.id === i)) : [];
+    S.sel.quiz = new Set(ids); S.quiz.phase = 'setup'; S.tab = 'toets'; render(); window.scrollTo(0, 0);
+    if (!ids.length) toast('Je docent heeft geen lesstof bij deze toets gezet. Kies zelf stof om mee te oefenen.', 7000);
+    return;
+  }
   if (a === 'opdpick') { const s = S.T.pick; s.has(d.id) ? s.delete(d.id) : s.add(d.id); render(); return; }
   if (a === 'opdsave') { await saveOpdracht(); return; }
   if (a === 'opdres') { S.T.openOpd = S.T.openOpd === d.id ? null : d.id; render(); return; }
