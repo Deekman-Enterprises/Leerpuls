@@ -1,31 +1,16 @@
-// Leerpuls service worker: maakt de app installeerbaar en laat hem ook bij slecht bereik openen.
-// Altijd eerst het netwerk (dus altijd de nieuwste versie), alleen bij geen internet uit de cache.
-// Verzoeken naar Supabase, AI en andere sites worden niet aangeraakt.
-const CACHE = 'leerpuls-v1';
-const SHELL = ['./', './index.html', './config.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
-
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));
-});
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
-});
-self.addEventListener('fetch', e => {
-  const req = e.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
-  e.respondWith((async () => {
-    try {
-      const res = await fetch(req);
-      if (res.ok && res.type === 'basic') {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req.mode === 'navigate' ? './index.html' : req, copy)).catch(() => {});
-      }
-      return res;
-    } catch {
-      const hit = await caches.match(req.mode === 'navigate' ? './index.html' : req, { ignoreSearch: req.mode === 'navigate' });
-      return hit || (await caches.match('./index.html')) || Response.error();
-    }
-  })());
+/* LUX Klantportaal — service worker: app werkt als echte app en laadt snel.
+   Alleen de app-bestanden worden bewaard; foto's en inloggegevens nooit. */
+const VERSIE = 'lux-portaal-v3';
+const BESTANDEN = ['/', '/index.html', '/app.css', '/app.js', '/installeer.js', '/config.js', '/privacy.html', '/manifest.webmanifest',
+  '/favicon.svg', '/favicon-32.png', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png'];
+self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSIE).then((c) => c.addAll(BESTANDEN)).then(() => self.skipWaiting())); });
+self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((n) => n !== VERSIE).map((n) => caches.delete(n)))).then(() => self.clients.claim())); });
+self.addEventListener('fetch', (e) => {
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET' || u.origin !== location.origin) return; // API en foto's altijd live
+  // Eerst het netwerk (altijd de nieuwste versie), offline terugvallen op de bewaarde versie.
+  e.respondWith(fetch(e.request).then((r) => {
+    if (r.ok) { const kopie = r.clone(); caches.open(VERSIE).then((c) => c.put(e.request, kopie)); }
+    return r;
+  }).catch(() => caches.match(e.request).then((r) => r || caches.match('/index.html'))));
 });
