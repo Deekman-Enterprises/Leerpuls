@@ -755,6 +755,7 @@ async function start(viaCode) {
   if (error || !acc || !acc.email) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Dit e-mailadres heeft (nog) geen Leerpuls-account.', canRequest: true }); return; }
   if (!acc.active) { started = false; await sb.auth.signOut(); showGate('blocked', { reason: 'Je account is gepauzeerd door de beheerder.' }); return; }
   S.account = acc; S.isAdmin = acc.email === OWNER || acc.role === 'admin'; S.isDocent = acc.role === 'docent';
+  S.isSchoolAdmin = !!(acc.school_beheer && acc.school_id); S.SB = null;
   await loadAboInfo();
   const toe = await myToegang(); S.toegang = toe;
   try { const { data: ms } = await sb.rpc('mijn_school'); S.school = ms || null; } catch { S.school = null; } // null = abonnement.sql nog niet gedraaid → gewoon toegang
@@ -1058,6 +1059,7 @@ async function handleFiles(files, vakId, title) {
 /* ================= weergaven ================= */
 function tabs() {
   const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
+  if (S.isSchoolAdmin) t.push(['school', 'School']);
   if (S.isAdmin) t.push(['beheer', 'Beheer', pendingReqs().length]);
   t.push(['account', 'Account']);
   return t;
@@ -1071,7 +1073,7 @@ function view() {
   h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
   <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
   h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && pendingReqs().length ? `<span class="badge" aria-label="nieuwe aanvragen">${pendingReqs().length}</span>` : ''}</button>`).join('')}</nav>`;
-  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, account: vAccount })[S.tab]();
+  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, school: vSchool, account: vAccount })[S.tab]();
   return h;
 }
 function picker(key, hint) {
@@ -1606,6 +1608,65 @@ function vBeheer() {
   </tbody></table></div><p class="small muted">Verwijderen wist ook alle stof, flashcards en resultaten van die student. Pauzeren blokkeert inloggen en AI, maar bewaart alles.</p></section></div>`;
 }
 
+
+/* ---- Schoolbeheer (voor de beheerder van een school) ---- */
+async function loadSchoolBeheer() {
+  if (S.SBloading) return; S.SBloading = true;
+  try { const { data, error } = await sb.rpc('school_overzicht'); if (error) throw error; S.SB = data; S.SBerr = null; }
+  catch (e) { console.error(e); S.SB = null; S.SBerr = e.message || 'fout'; }
+  S.SBloading = false; render();
+}
+function vSchool() {
+  if (!S.isSchoolAdmin) return '';
+  if (!S.SB && !S.SBerr) { loadSchoolBeheer(); return `<div class="stack"><h2>School</h2><section class="panel"><p class="muted">Laden…</p></section></div>`; }
+  if (S.SBerr) return `<div class="stack"><h2>School</h2><section class="panel"><div class="notice">Het schoolbeheer kon niet laden (${esc(S.SBerr)}). Vraag de beheerder van Leerpuls (${OWNER}) om schoolbeheer.sql te draaien.</div><div><button class="btn ghost" data-act="sbreload">Opnieuw</button></div></section></div>`;
+  const D = S.SB, sc = D.school || {}; const leden = D.leden || [], kl = D.klassen || [], wl = D.wachtlijst || [];
+  const studs = leden.filter(l => l.role === 'student'), docs = leden.filter(l => l.role === 'docent');
+  const used = sc.in_gebruik || 0, free = Math.max(0, (sc.plekken || 0) - used); const pct = sc.plekken ? Math.min(100, Math.round(used / sc.plekken * 100)) : 100;
+  const open = (D.verzoeken || []).find(v => v.status === 'nieuw');
+  const filter = (S.SBfilter || '').toLowerCase();
+  const shown = leden.filter(l => !filter || [l.name, l.email].join(' ').toLowerCase().includes(filter));
+  const klasSel = l => `<select data-sbklas="${esc(l.email)}" style="width:auto" aria-label="Klas van ${esc(l.name || l.email)}"><option value="">—</option>${kl.map(k => `<option value="${k.id}" ${l.klas_id === k.id ? 'selected' : ''}>${esc(k.naam)}</option>`).join('')}</select>`;
+  const me = S.account.email;
+  return `<div class="stack"><div class="row between"><h2>🏫 ${esc(sc.naam || 'School')}</h2><button class="btn sm ghost" data-act="sbreload">Vernieuwen</button></div>
+  ${sc.status !== 'actief' ? `<div class="notice">Deze school is gepauzeerd. Studenten kunnen nu niet inloggen. Neem contact op met ${OWNER}.</div>` : ''}
+  <div class="grid2">
+  <section class="panel"><h3>Plekken</h3>
+    <div class="seats" style="max-width:none;height:12px"><i style="width:${pct}%" class="${used >= sc.plekken ? 'vol' : ''}"></i></div>
+    <p><b>${used}</b> van <b>${sc.plekken || 0}</b> plekken in gebruik${free ? ` · nog ${free} vrij` : ' · <b>vol</b>'}</p>
+    <p class="small muted">Studenten met een ${(sc.domeinen || []).map(d => '@' + esc(d)).join(' of ')}-adres kunnen zelf inloggen op Leerpuls. Een actieve student telt als plek; docenten en gepauzeerde studenten tellen niet mee.</p>
+    ${wl.length ? `<div class="notice"><b>${plural(wl.length, 'student wacht', 'studenten wachten')}</b> op een plek: ${wl.map(w => esc(w.name || w.email)).join(', ')}.</div>${free ? `<div><button class="btn hl" data-act="sbtoelaten" ${S.busy ? 'disabled' : ''}>Laat ${Math.min(free, wl.length)} toe</button></div>` : ''}` : ''}
+  </section>
+  <section class="panel"><h3>Meer plekken nodig?</h3>
+    ${open ? `<p>Je verzoek om <b>${open.aantal} extra plekken</b> (${fmtDate(open.created_at)}) wordt bekeken. Je krijgt een mail zodra het is behandeld.</p>`
+      : `<p class="small muted">Vraag extra plekken aan. Leerpuls neemt contact met je op en past de factuur aan.</p>
+      <div class="fields"><label class="field"><span>Aantal extra plekken</span><input id="sbAantal" type="number" min="1" max="100000" value="${Math.max(10, wl.length)}"></label></div>
+      <label class="field"><span>Toelichting (optioneel)</span><textarea id="sbToel" maxlength="1000" placeholder="bijv. nieuwe klas CE2B start in februari"></textarea></label>
+      <div><button class="btn" data-act="sbplekken" ${S.busy ? 'disabled' : ''}>Vraag plekken aan</button></div>`}
+  </section></div>
+  <section class="panel"><div class="row between"><h3>Klassen</h3><span class="label">${kl.length}</span></div>
+    <div class="row" style="align-items:flex-end"><label class="field" style="flex:1 1 200px"><span>Nieuwe klas</span><input id="sbKlasNaam" maxlength="60" placeholder="bijv. CE1A"></label><button class="btn" data-act="sbklasadd">Klas toevoegen</button></div>
+    ${kl.length ? `<div class="list">${kl.map(k => { const conf = S.confirm === 'sbklas:' + k.id; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}</span><span class="small muted">${plural(Number(k.leerlingen), 'student', 'studenten')}</span>
+      <div class="chips" style="margin-top:4px">${(k.docenten || []).map(e => { const d = docs.find(x => x.email === e); return `<span class="pill">${esc(d && d.name ? d.name : e)} <button class="link small" data-act="sbunlink" data-klas="${k.id}" data-email="${esc(e)}" aria-label="Ontkoppel ${esc(e)}">✕</button></span>`; }).join('') || '<span class="small muted">Nog geen docent</span>'}</div>
+      ${docs.filter(d => !(k.docenten || []).includes(d.email)).length ? `<div class="row" style="margin-top:6px"><select data-sblink="${k.id}" style="width:auto;max-width:100%"><option value="">Docent koppelen…</option>${docs.filter(d => !(k.docenten || []).includes(d.email)).map(d => `<option value="${esc(d.email)}">${esc(d.name || d.email)}</option>`).join('')}</select></div>` : ''}</div>
+      ${conf ? `<span class="small">Klas verwijderen? Lesstof en opdrachten van deze klas worden ook gewist.</span><button class="btn sm danger" data-act="sbklasdel" data-id="${k.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="link small" data-act="confirm" data-key="sbklas:${k.id}">Verwijder</button>`}</div>`; }).join('')}</div>`
+      : `<p class="small muted">Maak klassen aan, koppel er docenten aan en zet studenten in een klas. Docenten kunnen dan lesstof delen en opdrachten klaarzetten.</p>`}
+  </section>
+  <section class="panel"><div class="row between"><h3>Studenten en docenten <span class="label">${studs.length} studenten · ${docs.length} docenten</span></h3><input id="sbFilter" placeholder="Zoek op naam of e-mail" style="max-width:260px" value="${esc(S.SBfilter || '')}" data-filter="sb" aria-label="Zoeken"></div>
+  <div class="tablewrap"><table><thead><tr><th>Naam</th><th>Rol</th><th>Klas</th><th>Status</th><th>Laatst actief</th><th></th></tr></thead><tbody>
+  ${shown.map(l => { const self = l.email === me; const conf = S.confirm === 'sbdel:' + l.email;
+    return `<tr><td><b>${esc(l.name || '—')}</b>${l.school_beheer ? ' <span class="pill good">schoolbeheerder</span>' : ''}<br><span class="small muted mono">${esc(l.email)}</span></td>
+    <td>${self ? (l.role === 'docent' ? 'Docent' : 'Student') : `<select data-sbrol="${esc(l.email)}" style="width:auto" aria-label="Rol van ${esc(l.name || l.email)}"><option value="student" ${l.role === 'student' ? 'selected' : ''}>Student</option><option value="docent" ${l.role === 'docent' ? 'selected' : ''}>Docent</option></select>`}
+      ${l.role === 'docent' && !self ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:4px;white-space:nowrap"><input type="checkbox" data-sbbeheer="${esc(l.email)}" ${l.school_beheer ? 'checked' : ''}> Schoolbeheerder</label>` : ''}</td>
+    <td>${l.role === 'student' ? klasSel(l) : '<span class="small muted">—</span>'}</td>
+    <td>${l.active ? '<span class="pill good">actief</span>' : '<span class="pill bad">gepauzeerd</span>'}${!l.last_login ? ' <span class="pill">nooit ingelogd</span>' : ''}</td>
+    <td class="small">${l.laatst_actief ? fmtDay(l.laatst_actief) : (l.last_login ? fmtDate(l.last_login) : '—')}</td>
+    <td style="white-space:nowrap">${self ? '<span class="small muted">jij</span>' : conf ? `<button class="btn sm danger" data-act="sbdel" data-email="${esc(l.email)}">Definitief verwijderen</button> <button class="btn sm ghost" data-act="cancel">Annuleer</button>`
+      : `<button class="btn sm ghost" data-act="sbactief" data-email="${esc(l.email)}" data-v="${l.active ? 0 : 1}">${l.active ? 'Pauzeer' : 'Activeer'}</button> <button class="link small" data-act="confirm" data-key="sbdel:${esc(l.email)}">Verwijder</button>`}</td></tr>`; }).join('') || `<tr><td colspan="6" class="muted">Nog niemand. Deel de link naar Leerpuls met je studenten; ze loggen in met hun schoolmail.</td></tr>`}
+  </tbody></table></div>
+  <p class="small muted">Je ziet alleen namen, e-mailadressen en wanneer iemand voor het laatst actief was, nooit de stof, oefeningen of cijfers van studenten. Pauzeren maakt een plek vrij en bewaart alles; verwijderen wist het account met alle gegevens. Een docent kun je schoolbeheerder maken, dan kan die collega deze pagina ook gebruiken.</p></section></div>`;
+}
+
 /* ---- Account ---- */
 function aboPanel() {
   const t = S.toegang; if (!t || t.reden === 'rol') return '';
@@ -1943,9 +2004,10 @@ async function loadScholen() {
       sb.from('school_wachtlijst').select('*').order('created_at'),
       sb.from('accounts').select('email,school_id,role,active')
     ]);
+    const vz = await sb.from('school_verzoeken').select('*').eq('status', 'nieuw').order('created_at'); A.verzoeken = vz.error ? [] : (vz.data || []);
     if (sc.error) throw sc.error;
     A.scholen = sc.data || []; A.wacht = wl.data || []; A.schoolOf = {};
-    A.seats = {}; (acc.data || []).forEach(a => { if (a.school_id) { A.schoolOf[a.email] = a.school_id; if (a.role === 'student' && a.active) A.seats[a.school_id] = (A.seats[a.school_id] || 0) + 1; } });
+    A.seats = {}; A.docCount = {}; (acc.data || []).forEach(a => { if (a.school_id) { A.schoolOf[a.email] = a.school_id; if (a.role === 'student' && a.active) A.seats[a.school_id] = (A.seats[a.school_id] || 0) + 1; if (a.role === 'docent') A.docCount[a.school_id] = (A.docCount[a.school_id] || 0) + 1; } });
     A.schoolErr = false;
   } catch (e) { console.warn('scholen', e); A.scholen = []; A.schoolErr = true; }
 }
@@ -1961,7 +2023,8 @@ function scholenSection() {
       return `<div class="item school"><div class="main" style="flex:1 1 260px"><span class="t">🏫 ${esc(s.naam)} ${s.status === 'actief' ? '<span class="pill good">actief</span>' : '<span class="pill bad">gepauzeerd</span>'}${wait.length ? ` <span class="pill warn">${wait.length} op wachtlijst</span>` : ''}</span>
         <span class="small muted">${(s.domeinen || []).map(d => '@' + esc(d)).join(', ')}${s.plaats ? ' · ' + esc(s.plaats) : ''}</span>
         <div class="seats" role="img" aria-label="${used} van ${s.plekken} plekken in gebruik"><i style="width:${pct}%" class="${used >= s.plekken ? 'vol' : ''}"></i></div>
-        <span class="small"><b>${used}</b> van <b>${s.plekken}</b> plekken in gebruik${s.prijs_per_plek != null ? ` · € ${Number(s.prijs_per_plek).toFixed(2).replace('.', ',')} per plek = <b>€ ${(used * Number(s.prijs_per_plek)).toFixed(2).replace('.', ',')}</b>` : ''}</span>
+        ${(A.verzoeken || []).filter(v => v.school_id === s.id).map(v => `<div class="notice small" style="margin:6px 0">Verzoek: <b>${v.aantal} extra plekken</b> (${esc(v.door)}, ${fmtDate(v.created_at)})${v.toelichting ? ` · "${esc(v.toelichting)}"` : ''} <span class="row" style="margin-top:6px"><button class="btn sm hl" data-act="verzoek" data-id="${v.id}" data-ok="1">Goedkeuren (+${v.aantal})</button><button class="btn sm ghost" data-act="verzoek" data-id="${v.id}" data-ok="0">Afwijzen</button></span></div>`).join('')}
+        <span class="small"><b>${used}</b> van <b>${s.plekken}</b> plekken in gebruik · ${plural(A.docCount[s.id] || 0, 'docent', 'docenten')}${s.prijs_per_plek != null ? ` · € ${Number(s.prijs_per_plek).toFixed(2).replace('.', ',')} per plek = <b>€ ${(used * Number(s.prijs_per_plek)).toFixed(2).replace('.', ',')}</b>` : ''}</span>
         ${open ? `<div class="kv small" style="margin-top:6px"><div><span class="muted">KvK</span> ${esc(s.kvk || '—')}</div><div><span class="muted">Btw</span> ${esc(s.btw || '—')}</div><div><span class="muted">Adres</span> ${esc([s.adres, [s.postcode, s.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}</div><div><span class="muted">Contact</span> ${esc(s.contact_naam)}${s.contact_functie ? ' (' + esc(s.contact_functie) + ')' : ''} · <span class="mono">${esc(s.contact_email)}</span>${s.contact_tel ? ' · ' + esc(s.contact_tel) : ''}</div><div><span class="muted">Facturen naar</span> <span class="mono">${esc(s.factuur_email || s.contact_email)}</span></div>${s.startdatum ? `<div><span class="muted">Start</span> ${fmtDay(s.startdatum)}</div>` : ''}${s.opmerkingen ? `<div><span class="muted">Opmerkingen</span> ${esc(s.opmerkingen)}</div>` : ''}</div>
           <div class="fields" style="margin-top:8px"><label class="field"><span>Plekken</span><input type="number" min="0" max="100000" value="${s.plekken}" data-schoolplek="${s.id}"></label><label class="field"><span>Prijs per plek (€)</span><input inputmode="decimal" value="${s.prijs_per_plek != null ? Number(s.prijs_per_plek).toFixed(2).replace('.', ',') : ''}" data-schoolprijs="${s.id}" placeholder="—"></label><label class="field"><span>E-maildomeinen</span><input value="${esc((s.domeinen || []).join(', '))}" data-schooldom="${s.id}"></label></div>
           ${wait.length ? `<div class="small" style="margin-top:6px"><b>Wachtlijst:</b> ${wait.map(w => esc(w.name || w.email) + ' <span class="muted mono">' + esc(w.email) + '</span>').join(', ')}</div>` : ''}` : ''}</div>
@@ -2538,6 +2601,15 @@ document.addEventListener('click', async e => {
   if (a === 'chatsend') { await sendChat(); return; }
   if (a === 'mic') { unlockSpeech(); if (V.listening) { stopListening(); } else startListening(false); return; }
   if (a === 'stopspeak') { stopSpeaking(); return; }
+  if (a === 'sbreload') { S.SB = null; S.SBerr = null; render(); return; }
+  if (a === 'sbtoelaten') { setBusy('Studenten toelaten…'); try { const r = await adminFn({ action: 'schooltoelaten' }); toast(`${plural(r.toegelaten, 'student', 'studenten')} toegelaten. Ze krijgen een mail.`); } catch (err) { toast('Toelaten lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); S.SB = null; render(); } return; }
+  if (a === 'sbplekken') { const n = +($('#sbAantal') || {}).value || 0; if (n < 1) { toast('Vul een aantal in.'); return; } setBusy('Verzoek versturen…'); try { await adminFn({ action: 'schoolplekken', aantal: n, toelichting: ($('#sbToel') || {}).value || '' }); toast('Je verzoek is verstuurd. Je krijgt een mail zodra het is behandeld.', 7000); } catch (err) { toast(err.error === 'pending' ? 'Er loopt al een verzoek.' : 'Versturen lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); S.SB = null; render(); } return; }
+  if (a === 'sbklasadd') { const n = ($('#sbKlasNaam') || {}).value || ''; if (!n.trim()) { toast('Vul een naam voor de klas in.'); return; } try { await q(sb.rpc('school_klas_toevoegen', { p_naam: n.trim() })); toast(`Klas ${n.trim()} toegevoegd.`); S.SB = null; render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'sbklasdel') { try { await q(sb.rpc('school_klas_verwijderen', { p_klas: d.id })); S.confirm = null; toast('Klas verwijderd.'); S.SB = null; render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'sbunlink') { try { await q(sb.rpc('school_docent_koppel', { p_klas: d.klas, p_email: d.email, p_aan: false })); toast('Docent ontkoppeld.'); S.SB = null; render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'sbactief') { try { await q(sb.rpc('school_lid', { p_email: d.email, p_wijz: { active: d.v === '1' } })); toast(d.v === '1' ? 'Account geactiveerd.' : 'Account gepauzeerd. De plek is vrij.'); S.SB = null; render(); } catch (err) { toast(err.message || 'Dat lukte niet.', 8000); } return; }
+  if (a === 'sbdel') { setBusy('Account verwijderen…'); try { await adminFn({ action: 'schoolverwijder', email: d.email }); S.confirm = null; toast('Account verwijderd.'); } catch (err) { toast('Verwijderen lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); S.SB = null; render(); } return; }
+  if (a === 'verzoek') { setBusy('Verwerken…'); try { const r = await adminFn({ action: 'schoolverzoek', id: d.id, goedkeuren: d.ok === '1' }); toast(d.ok === '1' ? `Plekken toegevoegd${r.toegelaten ? `, ${r.toegelaten} van de wachtlijst toegelaten` : ''}. De school krijgt een mail.` : 'Verzoek afgewezen. De school krijgt een mail.', 7000); await loadScholen(); } catch (err) { toast('Dat lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); render(); } return; }
   if (a === 'schoolopen') { S.admin.openSchool = S.admin.openSchool === d.id ? null : d.id; render(); return; }
   if (a === 'schoolstatus') { const s = (S.admin.scholen || []).find(x => x.id === d.id); const st = s.status === 'actief' ? 'gepauzeerd' : 'actief'; try { await q(sb.from('scholen').update({ status: st }).eq('id', d.id)); s.status = st; toast(st === 'actief' ? `${s.naam} is weer actief.` : `${s.naam} is gepauzeerd. Studenten van deze school kunnen niet meer inloggen.`, 7000); render(); } catch (err) { dbErr(err); } return; }
   if (a === 'schooltoelaten') { setBusy('Studenten toelaten…'); try { const r = await adminFn({ action: 'schooltoelaten', school_id: d.id }); toast(`${plural(r.toegelaten, 'student', 'studenten')} toegelaten en gemaild.`); await loadScholen(); S.admin.rows = null; } catch (err) { toast('Toelaten lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); render(); } return; }
@@ -2648,6 +2720,15 @@ document.addEventListener('change', async e => {
   if (t.dataset && t.dataset.linksel) { if (!t.value) return; try { await q(sb.from('klas_docenten').insert({ klas_id: t.dataset.linksel, docent_email: t.value })); await loadAdminKlassen(); await loadKlasData(); toast('Docent gekoppeld aan de klas.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.klasof) { try { await q(sb.from('accounts').update({ klas_id: t.value || null }).eq('email', t.dataset.klasof)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.klasof); if (r) r.klas_id = t.value || null; await loadAdminKlassen(); toast(t.value ? `In klas ${klasNaam(t.value)} gezet.` : 'Uit de klas gehaald.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.dataset && t.dataset.rolesel) { try { await q(sb.from('accounts').update({ role: t.value }).eq('email', t.dataset.rolesel)); const r = (S.admin.rows || []).find(x => x.email === t.dataset.rolesel); if (r) r.role = t.value; toast('Rol aangepast.'); render(); } catch (err) { dbErr(err); toast('Rol aanpassen lukte niet. Is docenten.sql al gedraaid?', 7000); } return; }
+  if (t.dataset && (t.dataset.sbrol || t.dataset.sbklas || t.dataset.sbbeheer || t.dataset.sblink)) {
+    try {
+      if (t.dataset.sblink) { if (!t.value) return; await q(sb.rpc('school_docent_koppel', { p_klas: t.dataset.sblink, p_email: t.value, p_aan: true })); toast('Docent gekoppeld.'); }
+      else if (t.dataset.sbrol) { await q(sb.rpc('school_lid', { p_email: t.dataset.sbrol, p_wijz: { role: t.value } })); toast(t.value === 'docent' ? 'Nu docent (telt niet meer als plek).' : 'Nu student.'); }
+      else if (t.dataset.sbklas) { await q(sb.rpc('school_lid', { p_email: t.dataset.sbklas, p_wijz: { klas_id: t.value || '' } })); toast(t.value ? 'In de klas gezet.' : 'Uit de klas gehaald.'); }
+      else if (t.dataset.sbbeheer) { await q(sb.rpc('school_lid', { p_email: t.dataset.sbbeheer, p_wijz: { school_beheer: t.checked } })); toast(t.checked ? 'Is nu ook schoolbeheerder.' : 'Is geen schoolbeheerder meer.'); }
+    } catch (err) { toast(err.message || 'Dat lukte niet.', 8000); }
+    S.SB = null; render(); return;
+  }
   if (t.dataset && (t.dataset.schoolplek || t.dataset.schoolprijs || t.dataset.schooldom)) {
     const id = t.dataset.schoolplek || t.dataset.schoolprijs || t.dataset.schooldom; let upd = {};
     if (t.dataset.schoolplek) upd = { plekken: Math.max(0, Math.min(100000, Math.round(+t.value || 0))) };
@@ -2672,6 +2753,7 @@ document.addEventListener('change', async e => {
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'phTitle') S.phTitle = e.target.value;
+  if (e.target.dataset && e.target.dataset.filter === 'sb') { S.SBfilter = e.target.value; render(); return; }
   if (e.target.dataset && e.target.dataset.filter) { S.admin.filter = e.target.value; render(); }
 });
 document.addEventListener('keydown', e => {
