@@ -10,6 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
+<meta name="lp-build" content="2026-10-29.2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -267,6 +268,15 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
 .ktnew{border-color:var(--hl);box-shadow:inset 4px 0 0 var(--hl)}
 .sendcd{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;background:var(--warn-bg);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;font-size:.95rem}
 .sendcd b{font-size:1.15rem}
+#modal{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px}
+#modal[hidden]{display:none}
+.modal-bg{position:absolute;inset:0;background:rgba(10,14,30,.55)}
+.modal-box{position:relative;background:var(--card,#fff);color:var(--ink);border-radius:16px;padding:22px 22px 18px;max-width:480px;width:100%;max-height:85vh;overflow:auto;display:grid;gap:10px;box-shadow:0 30px 60px -20px rgba(0,0,0,.5);border-top:6px solid var(--hl)}
+.modal-box h2{margin:0}
+body.modal-open{overflow:hidden}
+.newver{position:fixed;left:16px;right:16px;margin:0 auto;width:fit-content;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:15;background:var(--ink);color:var(--paper);border-radius:12px;padding:10px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 32px);box-shadow:0 20px 40px -15px rgba(0,0,0,.5)}
+.newver[hidden]{display:none}
+.newver .link{color:var(--paper)}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
 .check input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--ink)}
@@ -313,6 +323,8 @@ td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:ri
   <div id="app" hidden></div>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<div id="modal" hidden></div>
+<div class="newver" id="newVer" hidden role="status"><span>✨ Er is een nieuwe versie van Leerpuls.</span><button class="btn sm hl" data-nv="reload">Vernieuwen</button><button class="link small" data-nv="later">Later</button></div>
 
 <script>
 'use strict';
@@ -775,7 +787,8 @@ async function start(viaCode) {
 }
 async function showApp() {
   $('#gate').hidden = true; $('#app').hidden = false;
-  render(); await loadAll(); if (S.isAdmin) await loadRequests(); render();
+  render(); await loadAll(); if (S.isAdmin) await loadRequests(); await loadUpdates(); render();
+  setTimeout(showUpdatePopup, 600);
 }
 if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { started = false; showGate('email'); } });
 
@@ -1641,6 +1654,7 @@ function vBeheer() {
     ${'abo_status' in (rows[0] || {}) ? (() => { const n = rows.filter(r => r.abo_status === 'actief').length; const pr = ABO.info && ABO.info.prijs ? Number(ABO.info.prijs) : 0; return `<div class="stack" style="gap:2px"><span class="label">Betalende abonnees</span><span class="cijfer" style="font-size:2rem">${n}</span>${pr ? `<span class="small muted">≈ € ${(n * pr).toFixed(2).replace('.', ',')} per maand</span>` : ''}</div>`; })() : ''}</div>
     <p class="small muted">Je ziet alleen aantallen per student, nooit hun documenten, antwoorden of gesprekken.</p></section>
   ${reqSection()}
+  ${updatesBeheer()}
   ${scholenSection()}
   ${klassenSection()}
   <section class="panel"><div class="row between"><h3>Account toevoegen</h3><button class="link small" data-act="adminbulk">${A.bulk ? 'Eén account toevoegen' : 'Meerdere tegelijk toevoegen'}</button></div>
@@ -1757,8 +1771,83 @@ function vAccount() {
   <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label><div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
   <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw. Voorlezen met de natuurlijke stem telt niet mee.</p></section>
   ${installPanel('account')}
+  ${updatesAccount()}
   <section class="panel"><h3>Privacy</h3><p class="small muted">Je stof, antwoorden en gesprekken zijn alleen voor jou zichtbaar. Beheerders zien alleen aantallen.</p><div class="row"><button class="btn ghost" data-act="export">Download al mijn gegevens</button><button class="btn" data-act="logout">Uitloggen</button></div></section>
   </div></div>`;
+}
+
+
+/* ================= nieuwe versie + "Nieuw in Leerpuls" ================= */
+// 1) Nieuwe versie online gezet? De app vergelijkt zijn eigen bouwnummer (meta lp-build) met dat van de site.
+const BUILD = (document.querySelector('meta[name="lp-build"]') || {}).content || '';
+let nvLater = 0;
+async function checkNewVersion() {
+  if (!BUILD || location.protocol !== 'https:' || Date.now() < nvLater) return;
+  try {
+    const r = await fetch(location.pathname + '?versie=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const m = (await r.text()).match(/name="lp-build"\s+content="([^"]+)"/);
+    if (m && m[1] !== BUILD) $('#newVer').hidden = false;
+  } catch { /* offline: later opnieuw */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkNewVersion(); });
+setInterval(checkNewVersion, 10 * 60 * 1000);
+setTimeout(checkNewVersion, 15000);
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-nv]'); if (!b) return;
+  if (b.dataset.nv === 'reload') { location.reload(); return; }
+  $('#newVer').hidden = true; nvLater = Date.now() + 60 * 60 * 1000;
+});
+
+// 2) Updates die de beheerder aankondigt (tabel app_updates, updates.sql): één keer als pop-up
+function updSeen() { try { return new Set(JSON.parse(localStorage.getItem('lp_upd_seen') || '[]')); } catch { return new Set(); } }
+function markSeen(ids) { const s2 = updSeen(); ids.forEach(i => s2.add(i)); try { localStorage.setItem('lp_upd_seen', JSON.stringify([...s2].slice(-200))); } catch {} }
+const voorMij = u => u.doelgroep === 'iedereen' || (u.doelgroep === 'docenten' ? (S.isDocent || S.isAdmin) : !S.isDocent);
+async function loadUpdates() {
+  try { const { data, error } = await sb.from('app_updates').select('*').order('created_at', { ascending: false }).limit(30); if (error) throw error; S.updates = data || []; S.updErr = false; }
+  catch (e) { S.updates = []; S.updErr = true; }
+}
+function showUpdatePopup() {
+  if (!S.account || S.isAdmin && S.tab === 'beheer') return;
+  const seen = updSeen(); const since = new Date(S.account.created_at || 0).getTime() - 864e5; const recent = Date.now() - 60 * 864e5;
+  const list = (S.updates || []).filter(u => u.actief && voorMij(u) && !seen.has(u.id) && new Date(u.created_at).getTime() > Math.max(since, recent)).slice(0, 5);
+  if (!list.length) return;
+  S.popup = { list, i: 0 }; renderPopup();
+}
+function renderPopup() {
+  const P = S.popup, el = $('#modal');
+  if (!P) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('modal-open'); return; }
+  const u = P.list[P.i], last = P.i === P.list.length - 1;
+  el.innerHTML = `<div class="modal-bg" data-pop="close"></div><div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="popT">
+    <div class="row between"><span class="label">✨ Nieuw in Leerpuls${P.list.length > 1 ? ` · ${P.i + 1} van ${P.list.length}` : ''}</span><button class="link small" data-pop="close" aria-label="Sluiten">✕</button></div>
+    <h2 id="popT">${esc(u.titel)}</h2><div class="md">${md(u.tekst || '')}</div>
+    <p class="small muted">${fmtDate(u.created_at)}</p>
+    <div class="row">${last ? `<button class="btn hl" data-pop="close">Top, begrepen!</button>` : `<button class="btn hl" data-pop="next">Volgende</button><button class="btn ghost" data-pop="close">Sluiten</button>`}</div></div>`;
+  el.hidden = false; document.body.classList.add('modal-open');
+  const f = el.querySelector('.btn.hl'); if (f) f.focus();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-pop]'); if (!b || !S.popup) return;
+  markSeen([S.popup.list[S.popup.i].id]);
+  if (b.dataset.pop === 'next') { S.popup.i++; renderPopup(); return; }
+  markSeen(S.popup.list.map(u => u.id)); S.popup = null; renderPopup();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.popup) { markSeen(S.popup.list.map(u => u.id)); S.popup = null; renderPopup(); } });
+function updatesAccount() {
+  const list = (S.updates || []).filter(u => u.actief && voorMij(u)).slice(0, 5);
+  if (!list.length) return '';
+  return `<section class="panel"><h3>✨ Nieuw in Leerpuls</h3><div class="stack" style="gap:10px">${list.map(u => `<details><summary style="cursor:pointer"><b>${esc(u.titel)}</b> <span class="small muted">· ${fmtDate(u.created_at)}</span></summary><div class="md" style="margin-top:6px">${md(u.tekst || '')}</div></details>`).join('')}</div></section>`;
+}
+function updatesBeheer() {
+  if (S.updErr) return `<section class="panel"><h3>Updates aankondigen</h3><div class="notice">Draai eerst <b>updates.sql</b> in Supabase (SQL Editor).</div></section>`;
+  const U = S.upd = S.upd || { doel: 'iedereen' }; const list = S.updates || [];
+  return `<section class="panel"><h3>Updates aankondigen</h3><p class="small muted">Schrijf wat er nieuw is. Gebruikers zien het één keer als pop-up zodra ze de app openen, en daarna bij Account. Nieuwe gebruikers zien geen oude updates.</p>
+    <label class="field"><span>Titel</span><input id="updTitel" maxlength="120" placeholder="bijv. Praten bij gesprek oefenen werkt beter 🎙️"></label>
+    <label class="field"><span>Tekst</span><textarea id="updTekst" maxlength="4000" rows="5" placeholder="Wat is er veranderd? Een lijstje kan met - aan het begin van een regel, vet met **woord**."></textarea></label>
+    <div class="field"><span>Voor wie</span>${seg('upd.doel', U.doel, [['iedereen', 'Iedereen'], ['studenten', 'Studenten'], ['docenten', 'Docenten']])}</div>
+    <div class="row"><button class="btn hl" data-act="updsave" ${S.busy ? 'disabled' : ''}>Aankondigen</button><button class="btn ghost" data-act="updpreview">Voorbeeld bekijken</button></div>
+    ${list.length ? `<div class="list" style="margin-top:8px">${list.map(u => { const conf = S.confirm === 'upd:' + u.id; return `<div class="item"><div class="main"><span class="t">${esc(u.titel)} ${u.actief ? '' : '<span class="pill">verborgen</span>'}</span><span class="small muted">${fmtDate(u.created_at)} · ${u.doelgroep}</span></div>
+      ${conf ? `<button class="btn sm danger" data-act="upddel" data-id="${u.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm ghost" data-act="updtoggle" data-id="${u.id}">${u.actief ? 'Verberg' : 'Toon weer'}</button><button class="link small" data-act="confirm" data-key="upd:${u.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : ''}</section>`;
 }
 
 /* ================= render ================= */
@@ -2731,6 +2820,15 @@ document.addEventListener('click', async e => {
   if (a === 'cdnow') { cancelCountdown(); await sendChat(); return; }
   if (a === 'cdwait') { cancelCountdown(); startListening(false); toast('Ga verder met praten. Tik op de microfoon als je klaar bent, of wacht op de stilte.'); return; }
   if (a === 'stopspeak') { stopSpeaking(); return; }
+  if (a === 'updsave' || a === 'updpreview') {
+    const titel = ($('#updTitel').value || '').trim(), tekst = ($('#updTekst').value || '').trim();
+    if (!titel) { toast('Geef de update een titel.'); return; }
+    if (a === 'updpreview') { S.popup = { list: [{ id: 'voorbeeld', titel, tekst, created_at: new Date().toISOString() }], i: 0 }; renderPopup(); return; }
+    try { await q(sb.from('app_updates').insert({ titel, tekst, doelgroep: S.upd.doel })); $('#updTitel').value = ''; $('#updTekst').value = ''; await loadUpdates(); toast('Aangekondigd! Gebruikers zien het de volgende keer dat ze Leerpuls openen.', 7000); render(); } catch (err) { dbErr(err); }
+    return;
+  }
+  if (a === 'updtoggle') { const u = (S.updates || []).find(x => x.id === d.id); try { await q(sb.from('app_updates').update({ actief: !u.actief }).eq('id', d.id)); await loadUpdates(); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'upddel') { try { await q(sb.from('app_updates').delete().eq('id', d.id)); S.confirm = null; await loadUpdates(); render(); } catch (err) { dbErr(err); } return; }
   if (a === 'sbreload') { S.SB = null; S.SBerr = null; render(); return; }
   if (a === 'sbtoelaten') { setBusy('Studenten toelaten…'); try { const r = await adminFn({ action: 'schooltoelaten' }); toast(`${plural(r.toegelaten, 'student', 'studenten')} toegelaten. Ze krijgen een mail.`); } catch (err) { toast('Toelaten lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); S.SB = null; render(); } return; }
   if (a === 'sbplekken') { const n = +($('#sbAantal') || {}).value || 0; if (n < 1) { toast('Vul een aantal in.'); return; } setBusy('Verzoek versturen…'); try { await adminFn({ action: 'schoolplekken', aantal: n, toelichting: ($('#sbToel') || {}).value || '' }); toast('Je verzoek is verstuurd. Je krijgt een mail zodra het is behandeld.', 7000); } catch (err) { toast(err.error === 'pending' ? 'Er loopt al een verzoek.' : 'Versturen lukte niet: ' + (err.error || 'fout'), 7000); } finally { setBusy(null); S.SB = null; render(); } return; }
