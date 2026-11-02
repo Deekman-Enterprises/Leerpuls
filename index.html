@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
-<meta name="lp-build" content="2026-11-02.1">
+<meta name="lp-build" content="2026-11-02.3">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -61,8 +61,25 @@ p{margin:0}
 .streak{font-family:var(--f-mono);font-size:.82rem;background:var(--hl);color:var(--ink);border-radius:20px;padding:2px 10px}
 .tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:24px;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
+.tabs{overflow:visible;position:relative}
+.tab.menubtn{margin-left:auto;display:inline-flex;align-items:center;gap:6px}
+.tab.menubtn[aria-expanded="true"]{color:var(--ink)}
+.tab .dot{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--hl-solid);color:#161D36;font-size:11px;line-height:18px;text-align:center}
+.tabmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;width:min(360px,calc(100vw - 32px));background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.25);padding:10px}
+.tabmenu h4{margin:8px 8px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.tabmenu .mi{display:flex;align-items:center;gap:12px;width:100%;font:inherit;text-align:left;background:none;border:0;border-radius:10px;padding:9px 10px;color:var(--ink);cursor:pointer}
+.tabmenu .mi:hover,.tabmenu .mi:focus-visible{background:var(--paper)}
+.tabmenu .mi[aria-current="page"]{background:var(--paper);box-shadow:inset 3px 0 0 var(--hl-solid)}
+.tabmenu .mi .ic{width:22px;text-align:center;font-size:18px}
+.tabmenu .mi b{display:block;font-size:15px}
+.tabmenu .mi small{display:block;color:var(--muted);font-size:12.5px}
+.tabmenu .mi .dot{margin-left:auto}
 .tab{font:inherit;font-weight:700;background:none;border:0;color:var(--muted);padding:10px 12px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-1px}
 .tab[aria-current="page"]{color:var(--ink);border-bottom-color:var(--hl-solid)}
+@media (max-width:699px){.tabs{gap:0}.tab{padding:8px 6px;font-size:14px}.tab.menubtn{gap:4px}}
+.tab.menubtn .ml.alt{display:none}
+@media (max-width:699px){.tab.menubtn .ml.cur{display:none}.tab.menubtn .ml.alt{display:inline}}
+@media (max-width:359px){.tab{padding:8px 3px;font-size:13px}}
 .tab:hover{color:var(--ink)}
 .tab .n{font-family:var(--f-mono);font-size:.75rem;background:var(--hl);color:var(--ink);border-radius:20px;padding:0 6px;margin-left:4px}
 
@@ -1127,11 +1144,23 @@ async function handleFiles(files, vakId, title) {
 
 /* ================= weergaven ================= */
 function tabs() {
-  const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen'], ['verslag', 'Verslag-feedback']];
+  const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen'], ['verslag', 'Verslag']];
   if (S.isSchoolAdmin) t.push(['school', 'School']);
   if (S.isAdmin) t.push(['beheer', 'Beheer', pendingReqs().length]);
   t.push(['account', 'Account']);
   return t;
+}
+const MAIN_TABS = ['vandaag', 'agenda', 'vakken', 'account'];
+const TAB_INFO = {
+  klassen: ['🧑‍🏫', 'Je klassen, opdrachten en klastoetsen'], toets: ['📝', 'Oefen met vragen uit je eigen stof'], kaarten: ['🗂️', 'Herhalen op het juiste moment'],
+  gesprek: ['🎙️', 'Spreek een gesprek of pitch na'], uitleg: ['💡', 'Laat stof uitleggen en stel vragen'], verslag: ['📄', 'Feedback op je verslag of opdracht'],
+  school: ['🏫', 'Studenten, klassen en plekken van je school'], beheer: ['⚙️', 'Accounts, aanvragen, updates en feedback']
+};
+function tabMenu(due) {
+  const all = tabs(); const has = k => all.some(t => t[0] === k);
+  const groups = [['Leren', ['toets', 'kaarten', 'gesprek', 'uitleg', 'verslag']], ['Lesgeven', ['klassen']], ['Beheer', ['school', 'beheer']]];
+  const badge = k => k === 'kaarten' ? due : k === 'beheer' ? pendingReqs().length + fbNew() : 0;
+  return `<div class="tabmenu" id="tabMenu" role="menu">${groups.map(([g, ks]) => { const it = ks.filter(has); if (!it.length) return ''; return `<h4>${g}</h4>${it.map(k => { const l = all.find(t => t[0] === k)[1]; const [ic, sub] = TAB_INFO[k] || ['•', '']; const n = badge(k); return `<button class="mi" role="menuitem" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}><span class="ic" aria-hidden="true">${ic}</span><span><b>${esc(l)}</b><small>${sub}</small></span>${n ? `<span class="dot">${n}</span>` : ''}</button>`; }).join('')}`; }).join('')}</div>`;
 }
 const dueCards = () => { const now = Date.now(); let n = 0; for (const d of S.decks) for (const c of d.cards || []) if ((c.due || 0) <= now) n++; return n; };
 
@@ -1140,8 +1169,10 @@ function view() {
   let h = '';
   if (S.busy) h += `<div class="busy" role="status"><span class="dot"></span>${esc(S.busy)}</div>`;
   h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
-  <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}${S.focus && (S.focus.fase === 'focus' || S.focus.fase === 'pauze') ? `<button class="focusmini" id="focusMini" data-act="tab" data-tab="vandaag" title="Focus-timer">${S.focus.fase === 'focus' ? '🎯 ' : '☕ '}${fmtClock(focusLeft())}</button>` : ''}<button class="link small fbbtn" data-act="fbopen" title="Idee, probleem of compliment? Laat het weten">💬 Feedback</button><span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
-  h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && (pendingReqs().length + fbNew()) ? `<span class="badge" aria-label="nieuwe aanvragen en feedback">${pendingReqs().length + fbNew()}</span>` : ''}</button>`).join('')}</nav>`;
+  <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}${S.focus && (S.focus.fase === 'focus' || S.focus.fase === 'pauze') ? `<button class="focusmini" id="focusMini" data-act="tab" data-tab="vandaag" title="Focus-timer">${S.focus.fase === 'focus' ? '🎯 ' : '☕ '}${fmtClock(focusLeft())}</button>` : ''}<button class="link small fbbtn" data-act="fbopen" title="Idee, probleem of compliment? Laat het weten">💬 Feedback</button><button class="link small" data-act="tab" data-tab="account" title="Naar je account" style="color:inherit;text-decoration:none">👤 ${esc(name || (S.account && S.account.email) || '')}</button></div></header>`;
+  { const all = tabs(); const main = all.filter(t => MAIN_TABS.includes(t[0])); const cur = all.find(t => t[0] === S.tab && !MAIN_TABS.includes(t[0]));
+    const menuN = due + (S.isAdmin ? pendingReqs().length + fbNew() : 0);
+    h += `<nav class="tabs" aria-label="Onderdelen">${main.map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}<button class="tab menubtn" data-act="tabmenu" aria-haspopup="menu" aria-expanded="${S.menuOpen ? 'true' : 'false'}" ${cur ? 'aria-current="page"' : ''}><span aria-hidden="true">☰</span>${cur ? `<span class="ml cur">${esc(cur[1])}</span><span class="ml alt">Menu</span>` : '<span class="ml">Menu</span>'}${menuN && !S.menuOpen ? `<span class="dot" aria-label="${menuN} nieuw">${menuN}</span>` : ''}</button>${S.menuOpen ? tabMenu(due) : ''}</nav>`; }
   h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, verslag: vVerslag, beheer: vBeheer, school: vSchool, account: vAccount })[S.tab]();
   return h;
 }
@@ -2312,6 +2343,9 @@ document.addEventListener('click', async e => {
     F.busy = false; renderFeedbackModal();
   }
 });
+function closeTabMenu() { S.menuOpen = false; const m = document.getElementById('tabMenu'); if (m) m.remove(); const b = document.querySelector('[data-act="tabmenu"]'); if (b) b.setAttribute('aria-expanded', 'false'); }
+document.addEventListener('click', e => { if (S.menuOpen && !e.target.closest('#tabMenu') && !e.target.closest('[data-act="tabmenu"]')) closeTabMenu(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.menuOpen) { S.menuOpen = false; render(); const b = document.querySelector('[data-act="tabmenu"]'); if (b) b.focus(); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.fb) { S.fb = null; renderFeedbackModal(); } });
 function fbSeen() { try { return new Set(JSON.parse(localStorage.getItem('lp_fb_seen') || '[]')); } catch { return new Set(); } }
 function fbAnswered() {
@@ -3220,7 +3254,8 @@ document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]'); if (!el || el.disabled || $('#app').hidden) return;
   const a = el.dataset.act; const d = el.dataset;
   try {
-  if (a === 'tab') { if (d.tab !== 'gesprek') { stopSpeaking(); stopListening(); } S.tab = d.tab; S.confirm = null; if (d.tab === 'vakken') S.openVak = null; render(); window.scrollTo(0, 0); return; }
+  if (a === 'tabmenu') { S.menuOpen = !S.menuOpen; render(); if (S.menuOpen) { const f = document.querySelector('#tabMenu .mi'); if (f) f.focus(); } return; }
+  if (a === 'tab') { S.menuOpen = false; if (d.tab !== 'gesprek') { stopSpeaking(); stopListening(); } S.tab = d.tab; S.confirm = null; if (d.tab === 'vakken') S.openVak = null; render(); window.scrollTo(0, 0); return; }
   if (a === 'pick') { const s = S.sel[d.key]; s.has(d.id) ? s.delete(d.id) : s.add(d.id); render(); return; }
   if (a === 'pickvak') { const s = S.sel[d.key]; const ids = S.docs.filter(x => (x.vak_id || '') === d.vak).map(x => x.id); const all = ids.every(i => s.has(i)); ids.forEach(i => all ? s.delete(i) : s.add(i)); render(); return; }
   if (a === 'seg') { const parts = d.group.split('.'); let t = parts[0] === 'cards' ? S.cardsSet : S[parts[0]]; for (const p of parts.slice(1, -1)) t = t[p]; t[parts[parts.length - 1]] = isNaN(+d.val) ? d.val : +d.val; render(); return; }
