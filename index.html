@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
-<meta name="lp-build" content="2026-10-29.3">
+<meta name="lp-build" content="2026-11-02.1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -277,6 +277,32 @@ body.modal-open{overflow:hidden}
 .newver{position:fixed;left:16px;right:16px;margin:0 auto;width:fit-content;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:15;background:var(--ink);color:var(--paper);border-radius:12px;padding:10px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 32px);box-shadow:0 20px 40px -15px rgba(0,0,0,.5)}
 .newver[hidden]{display:none}
 .fbbtn{white-space:nowrap}
+.examclock{font-family:var(--f-mono);font-size:1.25rem;font-weight:700;padding:4px 10px;border-radius:8px;background:var(--card);border:1px solid var(--line)}
+.examclock.laag{color:var(--bad);border-color:var(--bad)}
+.examnav{display:flex;flex-wrap:wrap;gap:6px}
+.examnav button{min-width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;cursor:pointer}
+.examnav button.done{background:var(--paper);border-color:var(--ink)}
+.examnav button.cur{outline:3px solid var(--hl);outline-offset:1px}
+.examnav button.flag{box-shadow:inset 0 -4px 0 var(--bad)}
+.opt.sel{border-color:var(--ink);background:var(--paper);box-shadow:inset 4px 0 0 var(--ink)}
+.ready-top{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+.ready-score{width:96px;height:96px;border-radius:50%;display:grid;place-content:center;text-align:center;border:6px solid var(--line);flex:none}
+.ready-score b{font-family:var(--f-display);font-size:2rem;line-height:1}.ready-score span{font-size:.75rem;color:var(--muted)}
+.ready-score.good{border-color:var(--good)}.ready-score.warn{border-color:var(--warn)}.ready-score.bad{border-color:var(--bad)}
+.ready-part{display:grid;grid-template-columns:96px 1fr 44px;gap:2px 8px;align-items:center}
+.ready-part .bar{height:8px}
+.spark{margin:0;flex:1 1 220px;max-width:320px}.spark svg{width:100%;height:auto;overflow:visible}
+.spark-line{fill:none;stroke:var(--ink);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.spark-dot{fill:var(--ink);stroke:var(--card);stroke-width:2}
+.spark-ref{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3;opacity:.6}
+.spark-lbl,.spark-val{font-size:10px;fill:var(--muted);font-family:var(--f-mono)}.spark-val{fill:var(--ink);font-weight:700}
+.cijrows{display:grid;gap:6px}
+.cijrow{display:grid;grid-template-columns:minmax(0,1fr) 84px 92px 24px;gap:6px;align-items:center}
+.cijrow .wrap{display:flex;gap:4px;align-items:center}
+.focus-clock{font-family:var(--f-mono);font-size:3rem;font-weight:700;text-align:center;letter-spacing:1px}
+.focus-clock.focus{color:var(--ink)}.focus-clock.pauze{color:var(--good)}
+.crit{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.focusmini{font-family:var(--f-mono);font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:2px 8px;cursor:pointer}
 .newver .link{color:var(--paper)}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:.9rem}
@@ -406,7 +432,7 @@ const S = {
   sel: { quiz: new Set(), cards: new Set(), chat: new Set(), qa: new Set() },
   busy: null, openDoc: null, confirm: null, openVak: null, openPlan: null, newVakKleur: '1',
   photos: [], photoUrls: {}, phVak: '', phTitle: '',
-  quiz: { phase: 'setup', n: 10, soort: 'mix', niveau: 'toets' },
+  quiz: { phase: 'setup', n: 10, soort: 'mix', niveau: 'toets', modus: 'oefenen', tijd: 'auto' },
   cardsSet: { n: 15 }, study: null,
   chat: { phase: 'setup', read: false, hands: false, scenario: 'verkoop', toon: 'neutraal', lengte: 'normaal', msgs: [], tips: {} },
   qa: { msgs: [], out: '' },
@@ -788,8 +814,8 @@ async function start(viaCode) {
 }
 async function showApp() {
   $('#gate').hidden = true; $('#app').hidden = false;
-  render(); await loadAll(); if (S.isAdmin) await loadRequests(); await loadUpdates(); await loadFeedback(); render();
-  setTimeout(showUpdatePopup, 600);
+  render(); await loadAll(); if (S.isAdmin) await loadRequests(); await loadUpdates(); await loadFeedback(); await loadShares(); await loadVerslagen(); await pushState(); render();
+  setTimeout(() => { checkDeckLink(); if (!S.deckOffer) showUpdatePopup(); }, 600);
 }
 if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { started = false; showGate('email'); } });
 
@@ -960,6 +986,26 @@ async function readDocx(file) {
   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
   return (await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
 }
+// PowerPoint (.pptx): tekst per dia + sprekersnotities (JSZip)
+async function readPptx(file) {
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+  const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
+  const num = n => +(n.match(/(\d+)\.xml$/) || [0, 0])[1];
+  const slides = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => num(a) - num(b));
+  const textOf = xml => {
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    return [...doc.getElementsByTagNameNS('*', 'p')].map(p => [...p.getElementsByTagNameNS('*', 't')].map(t => t.textContent).join('')).filter(x => x.trim()).join('\n');
+  };
+  let out = '';
+  for (const n of slides) {
+    const i = num(n);
+    const body = textOf(await zip.file(n).async('string'));
+    const nf = zip.file(`ppt/notesSlides/notesSlide${i}.xml`);
+    const notes = nf ? textOf(await nf.async('string')).replace(/^\d+$/gm, '').trim() : '';
+    if (body.trim() || notes) out += `## Dia ${i}\n${body}${notes ? `\n(Notities: ${notes})` : ''}\n\n`;
+  }
+  return out;
+}
 async function decodeImage(file) {
   try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch {}
   try { return await createImageBitmap(file); } catch {}
@@ -1069,8 +1115,10 @@ async function handleFiles(files, vakId, title) {
         let text = '';
         if (ext === 'pdf') text = await readPdf(f);
         else if (ext === 'docx') text = await readDocx(f);
+        else if (ext === 'pptx') text = await readPptx(f);
         else if (['txt', 'md', 'csv'].includes(ext)) text = await f.text();
-        else { toast(`${f.name}: dit type wordt niet ondersteund. Gebruik PDF, Word (.docx), tekst of foto's.`, 6000); continue; }
+        else if (ext === 'ppt' || ext === 'doc') { toast(`${f.name}: dit is een oud bestandstype. Sla het op als ${ext === 'ppt' ? '.pptx' : '.docx'} of PDF en probeer opnieuw.`, 7000); continue; }
+        else { toast(`${f.name}: dit type wordt niet ondersteund. Gebruik PDF, Word (.docx), PowerPoint (.pptx), tekst of foto's.`, 6000); continue; }
         await addDocument({ title: f.name.replace(/\.[^.]+$/, ''), vakId, text, source: ext, file: f });
       } catch (e) { console.error(e); toast(`${f.name} kon niet gelezen worden.`, 6000); }
     }
@@ -1079,7 +1127,7 @@ async function handleFiles(files, vakId, title) {
 
 /* ================= weergaven ================= */
 function tabs() {
-  const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen']];
+  const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen'], ['verslag', 'Verslag-feedback']];
   if (S.isSchoolAdmin) t.push(['school', 'School']);
   if (S.isAdmin) t.push(['beheer', 'Beheer', pendingReqs().length]);
   t.push(['account', 'Account']);
@@ -1092,9 +1140,9 @@ function view() {
   let h = '';
   if (S.busy) h += `<div class="busy" role="status"><span class="dot"></span>${esc(S.busy)}</div>`;
   h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
-  <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}<button class="link small fbbtn" data-act="fbopen" title="Idee, probleem of compliment? Laat het weten">💬 Feedback</button><span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
+  <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}${S.focus && (S.focus.fase === 'focus' || S.focus.fase === 'pauze') ? `<button class="focusmini" id="focusMini" data-act="tab" data-tab="vandaag" title="Focus-timer">${S.focus.fase === 'focus' ? '🎯 ' : '☕ '}${fmtClock(focusLeft())}</button>` : ''}<button class="link small fbbtn" data-act="fbopen" title="Idee, probleem of compliment? Laat het weten">💬 Feedback</button><span>${esc(name || (S.account && S.account.email) || '')}</span></div></header>`;
   h += `<nav class="tabs" aria-label="Onderdelen">${tabs().map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}${k === 'kaarten' && due ? `<span class="n">${due}</span>` : ''}${k === 'beheer' && (pendingReqs().length + fbNew()) ? `<span class="badge" aria-label="nieuwe aanvragen en feedback">${pendingReqs().length + fbNew()}</span>` : ''}</button>`).join('')}</nav>`;
-  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, beheer: vBeheer, school: vSchool, account: vAccount })[S.tab]();
+  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, verslag: vVerslag, beheer: vBeheer, school: vSchool, account: vAccount })[S.tab]();
   return h;
 }
 function picker(key, hint) {
@@ -1139,10 +1187,13 @@ function vVandaag() {
   if (S.isAdmin && fbNew()) h += `<div class="notice row between"><span><b>${plural(fbNew(), 'nieuw feedbackbericht', 'nieuwe feedbackberichten')}</b> van gebruikers.</span><button class="btn sm" data-act="fbgo">Bekijk</button></div>`;
   h += fbAnswered();
   if (S.isAdmin && pendingReqs().length) h += `<div class="notice row between"><span><b>${plural(pendingReqs().length, 'nieuwe aanvraag', 'nieuwe aanvragen')}</b> voor Leerpuls.</span><button class="btn sm" data-act="tab" data-tab="beheer">Bekijk</button></div>`;
-  h += installPanel('vandaag') + ktNotice() + consentCard() + opdrPanelStudent();
+  h += installPanel('vandaag') + pushSuggest() + ktNotice() + consentCard() + opdrPanelStudent();
   if (isTeacher() && S.T.klassen.length) h += `<section class="panel"><div class="row between"><h3>Je klassen</h3><button class="btn sm" data-act="tab" data-tab="klassen">Naar Klassen</button></div><div class="list">${S.T.klassen.map(k => { const ops = S.opdr.filter(o => o.klas_id === k.id); const open = ops.filter(o => !o.deadline || o.deadline >= todayStr()).length; return `<div class="item"><div class="main"><span class="t">${esc(k.naam)}</span><span class="small muted">${plural(open, 'lopende opdracht', 'lopende opdrachten')} · ${S.kdocs.filter(d => d.klas_id === k.id).length} lesstof</span></div><button class="btn sm ghost" data-act="klassel" data-id="${k.id}" data-go="1">Open</button></div>`; }).join('')}</div></section>`;
   if (S.vakken.length || S.photos.length) h += photoPanel(null, { withVak: true, mobileOnly: true, heading: "Snel foto's toevoegen" });
+  { const nx = exams.find(e => e.vak_id && daysUntil(e.datum) <= 21); if (nx) h += readinessPanel(nx.vak_id, { compact: true, titel: `Klaar voor ${nx.naam}?`, sub: nx.days === 0 ? 'vandaag' : nx.days === 1 ? 'morgen' : `nog ${nx.days} dagen` }); }
+  if (S.focusAsk) { const [key, label] = S.focusAsk.split('|'); h += `<div class="notice row between"><span>Focusblok klaar! Taak afvinken: <b>${esc(label || '')}</b>?</span><span class="row"><button class="btn sm hl" data-act="focusdone" data-key="${esc(key)}">Afvinken</button><button class="btn sm ghost" data-act="focusnodone">Nog niet</button></span></div>`; }
   h += `<div class="grid2">`;
+  h += focusPanel();
   if (tasks.length) h += `<section class="panel"><h3>Vandaag op je leerplan</h3><div class="plan">${tasks.map(({ e, t, i }) => `<button class="task ${t.done ? 'done' : ''}" data-act="plantoggle" data-exam="${e.id}" data-i="${i}"><span class="box">${t.done ? '✓' : ''}</span><span style="flex:1;display:grid;gap:2px"><span class="tt">${esc(t.taak)}</span><span class="small muted">${esc(e.naam)} · ${esc(examVak(e))}${t.datum < today ? ' · ingehaald van ' + fmtDay(t.datum) : ''}</span></span></button>`).join('')}</div></section>`;
   h += `<section class="panel"><div class="row between"><h3>Toetsplanner</h3><span class="label">${plural(exams.length, 'toets', 'toetsen')}</span></div>
     ${exams.length ? `<div class="list">${exams.map(e => {
@@ -1194,9 +1245,10 @@ function vVak(id) {
   if (docs.length) h += `<section class="panel"><span class="label">Oefenen met dit vak</span><div class="row">
     <button class="btn" data-act="vakgo" data-to="toets" data-id="${id}">Oefentoets</button><button class="btn ghost" data-act="vakgo" data-to="kaarten" data-id="${id}">Flashcards maken</button>
     <button class="btn ghost" data-act="vakgo" data-to="uitleg" data-id="${id}">Samenvatting &amp; vragen</button><button class="btn ghost" data-act="vakgo" data-to="gesprek" data-id="${id}">Mondeling oefenen</button></div></section>`;
+  if (v) h += `<div class="grid2">${readinessPanel(v.id)}${cijfersPanel(v.id)}</div>`;
   h += photoPanel(id || null);
   h += `<section class="panel"><h3>Document toevoegen${v ? ' aan ' + esc(v.naam) : ''}</h3>
-  <label class="drop" id="drop"><input type="file" id="upFile" multiple accept=".pdf,.docx,.txt,.md,.csv,image/*"><b><span class="desk-only">Sleep bestanden hierheen of klik om te kiezen</span><span class="touch-only">Tik om een bestand te kiezen</span></b><span class="small muted">PDF, Word (.docx) of tekst. Foto's mogen ook.</span></label>
+  <label class="drop" id="drop"><input type="file" id="upFile" multiple accept=".pdf,.docx,.pptx,.txt,.md,.csv,image/*"><b><span class="desk-only">Sleep bestanden hierheen of klik om te kiezen</span><span class="touch-only">Tik om een bestand te kiezen</span></b><span class="small muted">PDF, Word (.docx), PowerPoint (.pptx) of tekst. Foto's mogen ook.</span></label>
   <details><summary class="link" style="cursor:pointer">Of plak tekst</summary><div class="stack" style="margin-top:10px"><label class="field"><span>Titel</span><input id="upTitle" placeholder="bijv. College 4 aantekeningen"></label><textarea id="upText" placeholder="Plak hier je samenvatting, collegeaantekeningen of een hoofdstuk"></textarea><div><button class="btn" data-act="paste" data-vak="${id}">Tekst toevoegen</button></div></div></details></section>`;
   h += `<section class="panel"><div class="row between"><h3>Documenten</h3><span class="label">${docs.length}</span></div>${docs.length ? `<div class="list">${docs.map(d => docItem(d)).join('')}</div>` : `<p class="muted small">Nog geen documenten in dit vak.</p>`}</section>`;
   return h + `</div>`;
@@ -1213,6 +1265,7 @@ function docItem(d) {
 /* ---- Oefentoets ---- */
 function vToets() {
   const qz = S.quiz;
+  if (qz.phase === 'run' && qz.examen) return examView();
   if (qz.phase === 'run') {
     const cur = qz.qs[qz.i]; const a = qz.answers[qz.i];
     let h = `<div class="stack"><div class="row between"><h2>${esc(qz.title)}</h2><button class="btn sm ghost" data-act="quizstop">Stoppen</button></div>${opdrBanner(S.opdr.find(o => o.id === qz.opdracht))}
@@ -1227,7 +1280,7 @@ function vToets() {
   }
   if (qz.phase === 'done') {
     const c = qz.cijfer;
-    let h = `<div class="stack"><h2>${esc(qz.title)}</h2>${opdrBanner(S.opdr.find(o => o.id === qz.opdracht))}<section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(c)}">${fmtCijfer(c)}</span><div class="stack" style="gap:4px"><b>${c >= 5.5 ? 'Voldoende' : 'Onvoldoende'}</b><span class="muted mono small">${String(qz.pts).replace('.', ',')} van ${qz.qs.length} punten</span></div></div>
+    let h = `<div class="stack"><h2>${esc(qz.title)}</h2>${opdrBanner(S.opdr.find(o => o.id === qz.opdracht))}<section class="panel"><div class="row" style="gap:24px"><span class="cijfer big ${vClass(c)}">${fmtCijfer(c)}</span><div class="stack" style="gap:4px"><b>${c >= 5.5 ? 'Voldoende' : 'Onvoldoende'}</b><span class="muted mono small">${String(qz.pts).replace('.', ',')} van ${qz.qs.length} punten${qz.examen ? ` · ⏱ ${fmtClock(qz.tijdGebruikt || 0)} van ${fmtClock(qz.examen.limit)} gebruikt` : ''}</span></div></div>
     ${qz.weak.length ? `<div class="row"><span class="small">Extra aandacht:</span>${qz.weak.map(t => `<span class="pill warn">${esc(t)}</span>`).join('')}</div>` : ''}
     <div class="row"><button class="btn" data-act="quiznew">Nieuwe toets</button>${qz.weak.length ? `<button class="btn ghost" data-act="quizweak">Oefen zwakke onderwerpen</button>` : ''}${qz.wrong.length ? `<button class="btn ghost" data-act="quizcards">Maak flashcards van je fouten</button>` : ''}</div></section>
     <section class="panel"><h3>Nakijken</h3><div class="stack">${qz.qs.map((x, k) => { const g = qz.grades[k];
@@ -1240,10 +1293,360 @@ function vToets() {
   <div class="fields"><div class="field"><span>Aantal vragen</span>${seg('quiz.n', qz.n, [[5, '5'], [10, '10'], [15, '15'], [20, '20']])}</div>
   <div class="field"><span>Soort</span>${seg('quiz.soort', qz.soort, [['mix', 'Gemengd'], ['mc', 'Meerkeuze'], ['open', 'Open']])}</div>
   <div class="field"><span>Niveau</span>${seg('quiz.niveau', qz.niveau, [['basis', 'Basis'], ['toets', 'Toetsniveau'], ['pittig', 'Pittig']])}</div></div>
+  <div class="field"><span>Modus</span>${seg('quiz.modus', qz.modus, [['oefenen', 'Oefenen (direct feedback)'], ['toets', '⏱ Toetsmodus (zoals een tentamen)']])}</div>
+  ${qz.modus === 'toets' ? `<div class="field"><span>Tijd</span>${seg('quiz.tijd', qz.tijd, [['auto', 'Automatisch'], [15, '15 min'], [30, '30 min'], [45, '45 min'], [60, '60 min'], [90, '90 min']])}</div>
+  <p class="small muted">In de toetsmodus loopt er een timer, krijg je geen tips en zie je pas na het inleveren wat goed en fout was, net als bij een echt tentamen. Je kunt tussen de vragen heen en weer gaan en vragen markeren. Bij "Automatisch" krijg je 1,5 minuut per meerkeuzevraag en 4 minuten per open vraag.</p>` : ''}
   <label class="field"><span>Focus (optioneel)</span><input id="quizFocus" placeholder="bijv. DESTEP en prijsstrategieën"></label>
-  <div><button class="btn" data-act="quizgo" ${can ? '' : 'disabled'}>Maak oefentoets</button></div></section>
-  ${past.length ? `<section class="panel"><h3>Eerdere toetsen</h3><div class="list">${past.slice(0, 12).map(r => `<div class="item"><div class="main"><span class="t">${esc(r.title)}</span><span class="small muted">${esc(vakNaam(r.vak_id))} · ${fmtDate(r.created_at)} · ${r.total} vragen</span></div><span class="grade ${vClass(r.cijfer)}">${fmtCijfer(r.cijfer)}</span></div>`).join('')}</div></section>` : ''}</div>`;
+  <div><button class="btn" data-act="quizgo" ${can ? '' : 'disabled'}>${qz.modus === 'toets' ? 'Start tentamensimulatie' : 'Maak oefentoets'}</button></div></section>
+  ${past.length ? `<section class="panel"><h3>Eerdere toetsen</h3><div class="list">${past.slice(0, 12).map(r => `<div class="item"><div class="main"><span class="t">${esc(r.title)}</span><span class="small muted">${r.modus === 'toetsmodus' ? '⏱ toetsmodus · ' : ''}${esc(vakNaam(r.vak_id))} · ${fmtDate(r.created_at)} · ${r.total} vragen</span></div><span class="grade ${vClass(r.cijfer)}">${fmtCijfer(r.cijfer)}</span></div>`).join('')}</div></section>` : ''}</div>`;
 }
+
+
+
+/* ---- klaar voor je toets? (per vak) ---- */
+function readiness(vakId) {
+  const res = S.results.filter(r => r.kind === 'toets' && (r.vak_id || null) === (vakId || null)).slice(0, 8);
+  const parts = [];
+  // 1) cijfers van recente oefentoetsen (recent telt zwaarder)
+  let cijferPct = null;
+  if (res.length) { let w = 0, t = 0; res.slice(0, 6).forEach((r, i) => { const g = 6 - i; w += g; t += g * Number(r.cijfer); }); cijferPct = Math.round(((t / w) - 1) / 9 * 100); parts.push({ k: 'Oefentoetsen', v: cijferPct, w: 0.6, sub: `${res.length > 6 ? 'laatste 6' : plural(res.length, 'toets', 'toetsen')}, gemiddeld ${fmtCijfer(Math.round(t / w * 10) / 10)}` }); }
+  // 2) flashcards van dit vak die je goed kent (bakje 3 of hoger)
+  const cards = S.decks.filter(d => (d.vak_id || null) === (vakId || null)).flatMap(d => d.cards || []);
+  if (cards.length) { const v = Math.round(cards.filter(c => (c.box || 1) >= 3).length / cards.length * 100); parts.push({ k: 'Flashcards', v, w: 0.25, sub: `${cards.filter(c => (c.box || 1) >= 3).length} van ${cards.length} kaarten goed in je hoofd` }); }
+  // 3) leerplan van de eerstvolgende toets van dit vak
+  const ex = vakId ? S.exams.filter(e => e.vak_id === vakId && daysUntil(e.datum) >= 0).sort((a, b) => a.datum.localeCompare(b.datum))[0] : null;
+  if (ex && (ex.plan || []).length) { const due = ex.plan.filter(t => t.datum <= todayStr()); const v = due.length ? Math.round(due.filter(t => t.done).length / due.length * 100) : 100; parts.push({ k: 'Leerplan', v, w: 0.15, sub: `${ex.plan.filter(t => t.done).length} van ${ex.plan.length} taken af` }); }
+  if (!parts.length) return null;
+  const tw = parts.reduce((a, p) => a + p.w, 0);
+  let score = Math.round(parts.reduce((a, p) => a + p.v * p.w, 0) / tw);
+  const last = res[0]; const oud = last ? -daysUntil(last.created_at.slice(0, 10)) : null;
+  if (oud != null && oud > 14) score = Math.round(score * 0.9);   // lang niet geoefend: je zakt wat weg
+  // onderwerpen: score per onderwerp uit de toetsen (nieuwere tellen zwaarder); oude toetsen zonder scores: zwakke onderwerpen
+  const top = {};
+  res.forEach((r, i) => { const g = 1 / (1 + i * 0.35); const o = r.onderwerpen || {};
+    if (Object.keys(o).length) for (const [t, [goed, tot]] of Object.entries(o)) { const x = top[t] || (top[t] = { goed: 0, tot: 0 }); x.goed += goed * g; x.tot += tot * g; }
+    else (r.weak || []).forEach(t => { const x = top[t] || (top[t] = { goed: 0, tot: 0 }); x.tot += 1 * g; x.goed += 0.3 * g; }); });
+  const topics = Object.entries(top).map(([t, x]) => ({ t, pct: Math.round(x.goed / x.tot * 100) })).sort((a, b) => a.pct - b.pct);
+  return { score, parts, topics, res, ex, oud, due: cards.filter(c => (c.due || 0) <= Date.now()).length };
+}
+function sparkline(res) {
+  const pts = res.slice(0, 10).reverse(); if (pts.length < 2) return '';
+  const W = 280, H = 70, P = 8, x = i => P + i * (W - 2 * P) / (pts.length - 1), y = c => H - P - (Number(c) - 1) / 9 * (H - 2 * P);
+  const line = pts.map((r, i) => `${x(i).toFixed(1)},${y(r.cijfer).toFixed(1)}`).join(' ');
+  return `<figure class="spark"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cijfers van je laatste ${pts.length} oefentoetsen: ${pts.map(r => fmtCijfer(r.cijfer)).join(', ')}">
+    <line x1="${P}" x2="${W - P}" y1="${y(5.5)}" y2="${y(5.5)}" class="spark-ref"/><text x="${W - P}" y="${y(5.5) - 3}" text-anchor="end" class="spark-lbl">5,5</text>
+    <polyline points="${line}" class="spark-line"/>
+    ${pts.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(r.cijfer).toFixed(1)}" r="4.5" class="spark-dot"><title>${esc(r.title)}: ${fmtCijfer(r.cijfer)} (${fmtDate(r.created_at)})</title></circle>`).join('')}
+    <text x="${x(pts.length - 1)}" y="${y(pts.at(-1).cijfer) - 9}" text-anchor="end" class="spark-val">${fmtCijfer(pts.at(-1).cijfer)}</text></svg><figcaption class="small muted">Je laatste ${pts.length} oefentoetsen</figcaption></figure>`;
+}
+function readinessPanel(vakId, opts = {}) {
+  const R = readiness(vakId); const v = vak(vakId);
+  const naam = opts.titel || (v ? v.naam : 'Zonder vak');
+  if (!R) return opts.compact ? '' : `<section class="panel"><h3>Klaar voor je toets?</h3><p class="small muted">Maak een oefentoets of flashcards voor ${esc(naam)}, dan zie je hier hoe ver je bent en waar je nog op moet letten.</p></section>`;
+  const lvl = R.score >= 75 ? ['good', 'Klaar voor je toets 💪'] : R.score >= 55 ? ['warn', 'Op de goede weg'] : ['bad', 'Nog niet klaar'];
+  const weak = R.topics.filter(t => t.pct < 80).slice(0, 2).map(t => t.t);
+  let advies = [];
+  if (!R.res.length) advies.push('Maak een oefentoets: dan zie je per onderwerp hoe goed je het kent.');
+  if (weak.length) advies.push(`Oefen gericht op <b>${weak.map(esc).join('</b> en <b>')}</b>.`);
+  if (R.due) advies.push(`Herhaal je ${plural(R.due, 'flashcard', 'flashcards')} die klaarstaan.`);
+  if (R.oud != null && R.oud > 7) advies.push(`Je laatste oefentoets was ${R.oud} dagen geleden. Doe er weer een.`);
+  if (R.ex && !(R.ex.plan || []).length && daysUntil(R.ex.datum) > 1) advies.push(`Maak een leerplan voor ${esc(R.ex.naam)}.`);
+  if (!advies.length) advies.push('Ga zo door! Doe vlak voor de toets nog één oefentoets in de toetsmodus.');
+  return `<section class="panel readiness"><div class="row between"><h3>${opts.titel ? esc(opts.titel) : 'Klaar voor je toets?'}</h3>${opts.sub ? `<span class="small muted">${opts.sub}</span>` : ''}</div>
+    <div class="ready-top"><div class="ready-score ${lvl[0]}" role="img" aria-label="Klaar-score ${R.score} van 100: ${lvl[1]}"><b>${R.score}</b><span>/100</span></div>
+      <div class="stack" style="gap:6px;flex:1 1 220px"><b>${lvl[1]}</b>${R.parts.map(p => `<div class="ready-part"><span class="small">${p.k}</span><div class="bar" aria-hidden="true"><i style="width:${Math.max(3, p.v)}%"></i></div><span class="small mono">${p.v}%</span><span class="small muted" style="grid-column:1/-1">${p.sub}</span></div>`).join('')}</div>
+      ${opts.compact ? '' : sparkline(R.res)}</div>
+    ${R.topics.length ? `<div class="stack" style="gap:6px"><span class="label">Per onderwerp</span><div class="chips">${R.topics.slice(0, opts.compact ? 6 : 14).map(t => `<span class="pill ${t.pct >= 80 ? 'good' : t.pct >= 50 ? 'warn' : 'bad'}">${t.pct >= 80 ? '✓' : t.pct >= 50 ? '~' : '!'} ${esc(t.t)} · ${t.pct}%</span>`).join('')}</div></div>` : ''}
+    <div class="stack" style="gap:4px"><span class="label">Advies</span>${advies.map(a => `<p class="small" style="margin:0">→ ${a}</p>`).join('')}</div>
+    <div class="row">${weak.length ? `<button class="btn sm hl" data-act="readyquiz" data-vak="${vakId || ''}" data-focus="${esc(weak.join(', '))}">Oefentoets op mijn zwakke punten</button>` : `<button class="btn sm" data-act="readyquiz" data-vak="${vakId || ''}" data-focus="">Oefentoets</button>`}${R.due ? `<button class="btn sm ghost" data-act="study" data-deck="">Herhaal flashcards</button>` : ''}</div></section>`;
+}
+
+/* ---- Wat moet ik halen? (cijfers per vak) ---- */
+function cijfersPanel(vakId) {
+  const v = vak(vakId); if (!v) return '';
+  if (S.cijErr) return '';
+  const rows = Array.isArray(v.cijfers) ? v.cijfers : []; const doel = Number(v.cijferdoel || 5.5);
+  const totW = rows.reduce((t, r) => t + (Number(r.weging) || 0), 0);
+  const done = rows.filter(r => r.cijfer !== '' && r.cijfer != null && !isNaN(Number(r.cijfer)));
+  const gotW = done.reduce((t, r) => t + (Number(r.weging) || 0), 0), got = done.reduce((t, r) => t + Number(r.cijfer) * (Number(r.weging) || 0), 0);
+  const restW = totW - gotW;
+  let uitkomst = '';
+  if (rows.length && totW > 0) {
+    if (restW <= 0) { const eind = got / totW; uitkomst = `<div class="fb ${eind >= doel ? 'good' : 'bad'}"><b>Eindcijfer: ${fmtCijfer(Math.round(eind * 10) / 10)}</b> ${eind >= doel ? '🎉 Gehaald!' : `· je doel was ${fmtCijfer(doel)}`}</div>`; }
+    else {
+      const nodig = (doel * totW - got) / restW;
+      const huidig = gotW ? Math.round(got / gotW * 10) / 10 : null;
+      uitkomst = nodig <= 1 ? `<div class="fb good"><b>Je hebt je doel al binnen!</b> Zelfs met een 1 voor de rest haal je een ${fmtCijfer(doel)}.</div>`
+        : nodig > 10 ? `<div class="fb bad"><b>Helaas niet meer haalbaar.</b> Je zou gemiddeld een ${fmtCijfer(Math.round(nodig * 10) / 10)} nodig hebben. Vraag naar een herkansing.</div>`
+        : `<div class="fb ${nodig > 7.5 ? 'bad' : nodig > 6 ? 'half' : 'good'}"><b>Je hebt gemiddeld minimaal een ${fmtCijfer(Math.ceil(nodig * 10) / 10)} nodig</b> voor ${plural(rows.length - done.length, 'het onderdeel', 'de onderdelen')} dat nog open ${rows.length - done.length === 1 ? 'staat' : 'staan'} (samen ${restW}%), om een ${fmtCijfer(doel)} te halen.${huidig != null ? ` <span class="small muted">Tot nu toe sta je gemiddeld een ${fmtCijfer(huidig)}.</span>` : ''}</div>`;
+    }
+    if (Math.abs(totW - 100) > 0.01) uitkomst += `<p class="small muted">Let op: de wegingen tellen op tot ${totW}%, niet 100%. Het eindcijfer wordt naar verhouding berekend.</p>`;
+  }
+  return `<section class="panel"><div class="row between"><h3>Wat moet ik halen?</h3><label class="row small" style="gap:6px">Doel <input type="number" min="1" max="10" step="0.1" value="${doel}" data-cijdoel="${v.id}" style="width:80px" aria-label="Eindcijfer dat je wilt halen"></label></div>
+    <p class="small muted">Vul de onderdelen van ${esc(v.naam)} in met hun weging (staat in je studiehandleiding). Laat het cijfer leeg als je het nog niet hebt.</p>
+    <div class="cijrows">${rows.map((r, i) => `<div class="cijrow"><input value="${esc(r.naam || '')}" placeholder="bijv. Tentamen" data-cij="${v.id}" data-i="${i}" data-f="naam" aria-label="Onderdeel"><input type="number" min="1" max="10" step="0.1" value="${r.cijfer ?? ''}" placeholder="cijfer" data-cij="${v.id}" data-i="${i}" data-f="cijfer" aria-label="Cijfer"><span class="wrap"><input type="number" min="0" max="100" step="1" value="${r.weging ?? ''}" placeholder="weging" data-cij="${v.id}" data-i="${i}" data-f="weging" aria-label="Weging in procenten"><span class="small muted">%</span></span><button class="link small" data-act="cijdel" data-vak="${v.id}" data-i="${i}" aria-label="Verwijder onderdeel">✕</button></div>`).join('')}</div>
+    <div><button class="btn sm ghost" data-act="cijadd" data-vak="${v.id}">+ Onderdeel toevoegen</button></div>${uitkomst}</section>`;
+}
+async function saveCijfers(v) {
+  chain('cij:' + v.id, async () => { const { error } = await sb.from('vakken').update({ cijfers: v.cijfers, cijferdoel: Number(v.cijferdoel) || 5.5 }).eq('id', v.id); if (error) { S.cijErr = /column/i.test(error.message || ''); if (!S.cijErr) dbErr(error); else render(); } });
+}
+
+/* ---- focus-timer (pomodoro) ---- */
+const FOCUS_SETS = { '25': [25, 5], '50': [50, 10], '15': [15, 3] };
+S.focus = (() => { try { const f = JSON.parse(localStorage.getItem('lp_focus') || 'null'); return f && f.endAt ? f : null; } catch { return null; } })() || { set: '25', fase: 'klaar', endAt: 0, left: 0, taak: '' };
+function focusSave() { try { localStorage.setItem('lp_focus', JSON.stringify(S.focus)); } catch {} }
+function focusMin() { try { const o = JSON.parse(localStorage.getItem('lp_focusmin') || '{}'); return o[todayStr()] || 0; } catch { return 0; } }
+function addFocusMin(n) { try { const o = JSON.parse(localStorage.getItem('lp_focusmin') || '{}'); o[todayStr()] = (o[todayStr()] || 0) + n; localStorage.setItem('lp_focusmin', JSON.stringify(o)); } catch {} }
+function focusLeft() { const F = S.focus; if (F.fase === 'pauzeer') return F.left; if (F.fase === 'focus' || F.fase === 'pauze') return Math.max(0, Math.round((F.endAt - Date.now()) / 1000)); return FOCUS_SETS[F.set][0] * 60; }
+function focusStart(fase) { const F = S.focus; const [f, p] = FOCUS_SETS[F.set]; F.fase = fase; F.was = fase; F.endAt = Date.now() + (fase === 'focus' ? f : p) * 60000; focusSave(); render(); }
+function focusPanel() {
+  const F = S.focus; const left = focusLeft(); const today = todayStr();
+  const taken = []; S.exams.forEach(e => (e.plan || []).forEach((t, i) => { if (t.datum <= today && !t.done && daysUntil(e.datum) >= 0) taken.push({ key: e.id + ':' + i, label: `${t.taak} (${e.naam})` }); }));
+  const running = F.fase === 'focus' || F.fase === 'pauze';
+  return `<section class="panel focus"><div class="row between"><h3>Focus-timer</h3><span class="small muted">${focusMin() ? `Vandaag ${focusMin()} min gefocust 🔥` : 'Leer in blokjes met korte pauzes'}</span></div>
+    <div class="focus-clock ${F.fase}" id="focusClock" role="timer" aria-live="off">${fmtClock(left)}</div>
+    <p class="small" style="margin:0;text-align:center">${F.fase === 'focus' ? '🎯 Focus! Telefoon weg, alleen deze taak.' : F.fase === 'pauze' ? '☕ Pauze: even opstaan en water drinken.' : F.fase === 'pauzeer' ? '⏸ Gepauzeerd' : 'Kies een blok en start.'}${F.taak ? `<br><span class="muted">Taak: ${esc(F.taak.split('|')[1] || '')}</span>` : ''}</p>
+    ${!running && F.fase !== 'pauzeer' ? `<div class="row" style="justify-content:center">${seg('focus.set', F.set, [['25', '25 + 5 min'], ['50', '50 + 10 min'], ['15', '15 + 3 min']])}</div>
+      ${taken.length ? `<label class="field"><span>Waar werk je aan? (optioneel)</span><select id="focusTaak"><option value="">Geen specifieke taak</option>${taken.map(t => `<option value="${esc(t.key)}|${esc(t.label)}" ${F.taak.startsWith(t.key + '|') ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select></label>` : ''}` : ''}
+    <div class="row" style="justify-content:center">${running ? `<button class="btn ghost" data-act="focuspause">Pauzeer</button><button class="btn ghost" data-act="focusstop">Stop</button>${F.fase === 'pauze' ? '<button class="btn" data-act="focusgo">Pauze overslaan</button>' : ''}`
+      : F.fase === 'pauzeer' ? `<button class="btn hl" data-act="focusresume">Verder</button><button class="btn ghost" data-act="focusstop">Stop</button>` : `<button class="btn hl" data-act="focusgo">Start focusblok</button>`}</div></section>`;
+}
+let focusNotified = false;
+setInterval(() => {
+  const F = S.focus; if (!F || (F.fase !== 'focus' && F.fase !== 'pauze')) return;
+  const left = focusLeft(); const el = $('#focusClock'); if (el) el.textContent = fmtClock(left);
+  const hd = $('#focusMini'); if (hd) hd.textContent = (F.fase === 'focus' ? '🎯 ' : '☕ ') + fmtClock(left);
+  if (left > 0) return;
+  try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch {}
+  try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); const g = ctx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.15, ctx.currentTime); o.start(); o.stop(ctx.currentTime + 0.4); } catch {}
+  if (F.fase === 'focus') {
+    addFocusMin(FOCUS_SETS[F.set][0]); if (S.account) markStudy();
+    if (F.taak) { S.focusAsk = F.taak; }
+    toast('Goed gedaan! Tijd voor pauze ☕', 6000); focusStart('pauze');
+  } else { toast('De pauze is voorbij. Klaar voor het volgende blok?', 6000); F.fase = 'klaar'; focusSave(); render(); }
+}, 1000);
+
+
+/* ---- flashcards delen (studie.sql: gedeelde_decks) ---- */
+const myShare = deckId => (S.myShares || []).find(x => x.deck_id === deckId);
+async function loadShares() {
+  try {
+    const { data, error } = await sb.from('gedeelde_decks').select('id,code,title,klas_id,deck_id,user_id,door,imports,created_at,cards').order('created_at', { ascending: false });
+    if (error) throw error;
+    S.myShares = (data || []).filter(x => x.user_id === S.user.id);
+    S.klasDecks = (data || []).filter(x => x.user_id !== S.user.id && S.klas && x.klas_id === S.klas.klas_id);
+    S.shareErr = false;
+  } catch (e) { S.myShares = []; S.klasDecks = []; S.shareErr = true; }
+}
+const deckLink = code => `${location.origin}${location.pathname}?deck=${code}`;
+function sharePanel() {
+  const d = S.shareDeck && S.decks.find(x => x.id === S.shareDeck); if (!d) return '';
+  const sh = myShare(d.id);
+  return `<section class="panel ktnew"><div class="row between"><h3>“${esc(d.title)}” delen</h3><button class="link small" data-act="deckshareclose">Sluiten</button></div>
+    <p class="small muted">Je deelt alleen de vragen en antwoorden (${plural((d.cards || []).length, 'kaart', 'kaarten')}), niet hoe goed jij ze kent. Wie hem toevoegt, krijgt een eigen kopie.</p>
+    ${sh ? `<div class="row"><input readonly value="${esc(deckLink(sh.code))}" id="shareLink" style="flex:1 1 240px" aria-label="Deellink"><button class="btn sm hl" data-act="sharecopy" data-code="${sh.code}">${navigator.share ? 'Deel link' : 'Kopieer link'}</button></div>
+      <span class="small muted">Code: <b class="mono">${sh.code}</b> · ${plural(sh.imports || 0, 'keer', 'keer')} toegevoegd door anderen</span>
+      ${S.klas ? `<label class="check"><input type="checkbox" data-shareklas="${sh.id}" ${sh.klas_id ? 'checked' : ''}><span>Ook tonen aan mijn klas <b>${esc(S.klas.naam)}</b> (bij Flashcards → Van je klas)</span></label>` : ''}
+      <div class="row"><button class="btn sm ghost" data-act="shareupdate" data-id="${sh.id}">Kaarten bijwerken</button><button class="link small" data-act="sharestop" data-id="${sh.id}">Stop met delen</button></div>`
+    : `<div class="row"><button class="btn hl" data-act="sharemake" data-id="${d.id}">Maak deellink</button>${S.klas ? `<button class="btn ghost" data-act="sharemake" data-id="${d.id}" data-klas="1">Delen met klas ${esc(S.klas.naam)}</button>` : ''}</div>`}</section>`;
+}
+function klasDecksPanel() {
+  const list = S.klasDecks || []; if (!list.length) return '';
+  let got = new Set(); try { got = new Set(JSON.parse(localStorage.getItem('lp_imported') || '[]')); } catch {}
+  return `<section class="panel"><div class="row between"><h3>Van je klas</h3><span class="label">${list.length}</span></div><div class="list">${list.map(x => `<div class="item"><div class="main"><span class="t">${esc(x.title)}</span><span class="small muted">van ${esc(x.door || 'een klasgenoot')} · ${plural((x.cards || []).length, 'kaart', 'kaarten')}</span></div>${got.has(x.id) ? '<span class="pill good">toegevoegd</span>' : `<button class="btn sm" data-act="deckimport" data-id="${x.id}">Voeg toe</button>`}</div>`).join('')}</div></section>`;
+}
+async function importDeck(x) {
+  const cards = (x.cards || []).filter(c => c && c.front && c.back).map((c, i) => ({ id: 'c' + i, front: String(c.front), back: String(c.back), box: 1, due: 0 }));
+  if (!cards.length) { toast('Deze set is leeg.'); return false; }
+  const row = await q(sb.from('decks').insert({ title: String(x.title).slice(0, 80), cards }).select().single());
+  S.decks.unshift(row);
+  try { await sb.rpc('deck_geimporteerd', { p_id: x.id }); } catch {}
+  try { const got = new Set(JSON.parse(localStorage.getItem('lp_imported') || '[]')); got.add(x.id); localStorage.setItem('lp_imported', JSON.stringify([...got].slice(-200))); } catch {}
+  toast(`“${x.title}” staat nu bij je flashcards (${plural(cards.length, "kaart", "kaarten")}).`, 6000);
+  return true;
+}
+// link ?deck=CODE: onthouden tot na het inloggen
+(() => { const m = location.search.match(/[?&]deck=([A-Za-z0-9]{4,12})/); if (m) { try { sessionStorage.setItem('lp_deck', m[1].toUpperCase()); history.replaceState(null, '', location.pathname); } catch {} } })();
+async function checkDeckLink() {
+  let code = null; try { code = sessionStorage.getItem('lp_deck'); } catch {}
+  if (!code) return;
+  try { sessionStorage.removeItem('lp_deck'); } catch {}
+  try {
+    const { data, error } = await sb.rpc('deck_via_code', { p_code: code });
+    if (error || !data) { toast('Deze deellink werkt niet (meer).', 6000); return; }
+    S.deckOffer = data; renderDeckOffer();
+  } catch { toast('Deze deellink werkt niet (meer).', 6000); }
+}
+function renderDeckOffer() {
+  const x = S.deckOffer, el = $('#modal'); if (!x) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('modal-open'); return; }
+  el.innerHTML = `<div class="modal-bg" data-dk="no"></div><div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="dkT"><span class="label">🃏 Flashcards gedeeld</span>
+    <h2 id="dkT">${esc(x.title)}</h2><p>${esc(x.door || 'Iemand')} heeft ${plural((x.cards || []).length, 'flashcard', 'flashcards')} met je gedeeld.</p>
+    <div class="stack" style="gap:4px">${(x.cards || []).slice(0, 3).map(c => `<div class="quote small"><b>${esc(c.front)}</b><br>${esc(c.back)}</div>`).join('')}${(x.cards || []).length > 3 ? `<span class="small muted">… en nog ${(x.cards || []).length - 3}</span>` : ''}</div>
+    <div class="row"><button class="btn hl" data-dk="yes">Voeg toe aan mijn flashcards</button><button class="btn ghost" data-dk="no">Nee, bedankt</button></div></div>`;
+  el.hidden = false; document.body.classList.add('modal-open');
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-dk]'); if (!b || !S.deckOffer) return;
+  const x = S.deckOffer; S.deckOffer = null; renderDeckOffer();
+  if (b.dataset.dk === 'yes') { try { if (await importDeck(x)) { S.tab = 'kaarten'; render(); } } catch (err) { dbErr(err); } }
+});
+
+
+/* ---- feedback op je verslag (studie.sql: verslagen) ---- */
+const OORDEEL_CLS = { onvoldoende: 'bad', voldoende: 'warn', goed: 'good', uitstekend: 'good' };
+async function loadVerslagen() { try { const { data, error } = await sb.from('verslagen').select('*').order('created_at', { ascending: false }).limit(30); if (error) throw error; S.verslagen = data || []; S.vsErr = false; } catch { S.verslagen = []; S.vsErr = true; } }
+async function readAnyFile(f) {
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (ext === 'pdf') return readPdf(f); if (ext === 'docx') return readDocx(f); if (ext === 'pptx') return readPptx(f);
+  if (['txt', 'md', 'csv'].includes(ext)) return f.text();
+  throw new Error('type');
+}
+function vVerslag() {
+  const V2 = S.vs = S.vs || { phase: 'setup', text: '', titel: '', rubric: '', opdracht: '', vakId: '', algemeen: false };
+  if (V2.phase === 'done' && V2.result) return verslagResult(V2.result, V2.titel, !V2.oud);
+  const kan = V2.text.trim().length > 200 && (V2.rubric.trim().length > 20 || V2.algemeen) && !S.busy;
+  return `<div class="stack"><div class="row between"><h2>Feedback op je verslag</h2>${aiMeter()}</div>
+  <section class="panel"><p class="small muted">Upload je verslag, opdracht of essay en het beoordelingsformulier (rubric) van je opleiding. Je krijgt per criterium feedback en concrete verbeterpunten, zoals een docent die je verslag nakijkt. Het is een <b>indicatie</b>: je docent beslist.</p>
+    <div class="grid2">
+      <div class="stack"><span class="label">1. Je verslag ${V2.text ? `<span class="pill good">✓ ${Math.round(V2.text.length / 1000)}k tekens</span>` : ''}</span>
+        <label class="drop"><input type="file" data-vsfile="text" accept=".pdf,.docx,.pptx,.txt,.md"><b>${V2.titel ? esc(V2.titel) : 'Kies je verslag'}</b><span class="small muted">PDF, Word, PowerPoint of tekst</span></label>
+        <details><summary class="link small" style="cursor:pointer">Of plak de tekst</summary><textarea id="vsText" rows="6" placeholder="Plak hier je tekst">${esc(V2.pasted ? V2.text : '')}</textarea></details></div>
+      <div class="stack"><span class="label">2. Beoordelingsformulier ${V2.rubric ? `<span class="pill good">✓ ${V2.rubricNaam ? esc(V2.rubricNaam) : 'ingevuld'}</span>` : ''}</span>
+        <label class="drop"><input type="file" data-vsfile="rubric" accept=".pdf,.docx,.pptx,.txt,.md"><b>${V2.rubricNaam ? esc(V2.rubricNaam) : 'Kies het beoordelingsformulier'}</b><span class="small muted">Rubric, beoordelingsmodel of criteria</span></label>
+        <details><summary class="link small" style="cursor:pointer">Of plak de criteria</summary><textarea id="vsRubric" rows="6" placeholder="bijv. Inleiding (10%): probleemstelling is helder...">${esc(V2.rubricPasted ? V2.rubric : '')}</textarea></details>
+        <label class="check"><input type="checkbox" id="vsAlg" ${V2.algemeen ? 'checked' : ''}><span>Ik heb geen formulier: gebruik algemene hbo-criteria</span></label></div></div>
+    <label class="field"><span>Opdrachtomschrijving (optioneel)</span><textarea id="vsOpdr" rows="3" placeholder="Plak de opdracht, zodat de feedback ook kijkt of je de vraag beantwoordt">${esc(V2.opdracht)}</textarea></label>
+    <div class="fields"><label class="field"><span>Vak (optioneel)</span><select id="vsVak">${vakOptions(V2.vakId || null)}</select></label></div>
+    <div><button class="btn hl" data-act="vsgo" ${kan ? '' : 'disabled'}>Geef feedback</button> ${!kan && !S.busy ? `<span class="small muted">${!V2.text.trim() ? 'Voeg eerst je verslag toe.' : V2.text.trim().length <= 200 ? 'Je verslag is erg kort.' : 'Voeg het beoordelingsformulier toe of vink algemene criteria aan.'}</span>` : ''}</div>
+    <p class="small muted">Je verslag wordt alleen gebruikt om feedback te maken en niet bewaard. De feedback zelf wordt bewaard, zodat je hem later terugziet.</p></section>
+  ${(S.verslagen || []).length ? `<section class="panel"><h3>Eerdere feedback</h3><div class="list">${S.verslagen.map(v => `<div class="item"><div class="main"><span class="t">${esc(v.titel || 'Verslag')}</span><span class="small muted">${v.vak_id ? esc(vakNaam(v.vak_id)) + ' · ' : ''}${fmtDate(v.created_at)}</span></div>${v.feedback && v.feedback.indicatie ? `<span class="grade ${vClass(v.feedback.indicatie)}">${fmtCijfer(v.feedback.indicatie)}</span>` : ''}<button class="btn sm ghost" data-act="vsopen" data-id="${v.id}">Bekijk</button></div>`).join('')}</div></section>` : ''}</div>`;
+}
+function verslagResult(f, titel, actueel) {
+  const c = Number(f.indicatie);
+  return `<div class="stack"><div class="row between"><h2>Feedback: ${esc(titel || f.titel || 'je verslag')}</h2><div class="row"><button class="btn sm ghost" data-act="vsdownload">Download</button><button class="btn sm ghost" data-act="vsnew">${actueel ? 'Nieuw verslag' : 'Terug'}</button></div></div>
+  <section class="panel"><div class="row" style="gap:24px">${isFinite(c) && c > 0 ? `<span class="cijfer big ${vClass(c)}">${fmtCijfer(c)}</span>` : ''}<div class="stack" style="gap:4px;flex:1 1 260px"><b>${esc(f.oordeel || '')}</b><p style="margin:0">${esc(f.samenvatting || '')}</p><span class="small muted">Indicatie op basis van ${f.algemeen ? 'algemene hbo-criteria' : 'het beoordelingsformulier'}; je docent bepaalt het echte cijfer.</span></div></div>
+    ${(f.top3 || []).length ? `<div class="fb half"><span class="label">Verbeter dit eerst</span><ol class="md">${f.top3.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>` : ''}
+    ${actueel ? `<div class="row"><button class="btn sm" data-act="vsagain">Opnieuw na aanpassingen</button><span class="small muted">Upload je verbeterde versie; het formulier blijft staan.</span></div>` : ''}</section>
+  <section class="panel"><h3>Per criterium</h3><div class="stack">${(f.criteria || []).map(k => `<div class="crit"><div class="row between"><b>${esc(k.naam)}</b><span class="pill ${OORDEEL_CLS[(k.oordeel || '').toLowerCase()] || ''}">${esc(k.oordeel || '')}${k.score ? ' · ' + esc(String(k.score)) : ''}</span></div>
+    <p class="small" style="margin:4px 0">${esc(k.toelichting || '')}</p>${(k.verbeterpunten || []).length ? `<ul class="md small">${k.verbeterpunten.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${k.voorbeeld ? `<div class="quote small">💡 ${esc(k.voorbeeld)}</div>` : ''}</div>`).join('')}</div></section>
+  <div class="grid2">${(f.sterk || []).length ? `<section class="panel"><h3>Wat goed is</h3><ul class="md">${f.sterk.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>` : ''}
+  ${(f.taal || []).length ? `<section class="panel"><h3>Taal en spelling</h3><ul class="md">${f.taal.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>` : ''}</div></div>`;
+}
+async function runVerslag() {
+  const V2 = S.vs; const keep = () => { const o = $('#vsOpdr'); if (o) V2.opdracht = o.value; const v = $('#vsVak'); if (v) V2.vakId = v.value; };
+  keep();
+  setBusy('Je verslag wordt nagekeken… (dit duurt even)');
+  try {
+    const r = await aiJson({ kind: 'verslag', max_tokens: 7000, prompt: `Je bent een ervaren, eerlijke hbo-docent die verslagen nakijkt. Beoordeel het verslag van een student ${V2.algemeen ? 'op algemene hbo-criteria (onderzoeksvraag/doel, opbouw en structuur, onderbouwing met bronnen (APA), analyse en diepgang, conclusie en aanbevelingen, taalgebruik en zakelijke stijl)' : 'precies volgens de criteria van het beoordelingsformulier hieronder (gebruik dezelfde criteria-namen, en de punten of niveaus als het formulier die geeft)'}.${V2.opdracht.trim() ? ' Kijk ook of het verslag de opdracht beantwoordt.' : ''}
+Geef per criterium: oordeel (onvoldoende / voldoende / goed / uitstekend), eventueel de score volgens het formulier, een toelichting die verwijst naar concrete plekken in het verslag, 1-3 concrete verbeterpunten en waar nuttig een korte herschreven voorbeeldzin. Wees specifiek en constructief, spreek de student aan met "je", schrijf in het Nederlands. Verzin niets dat niet in het verslag staat.
+Antwoord met alleen JSON: {"titel":"korte titel van het verslag","indicatie":6.5,"oordeel":"bijv. Voldoende, met duidelijke verbeterpunten","samenvatting":"2-3 zinnen","top3":["belangrijkste verbetering","..."],"criteria":[{"naam":"...","oordeel":"voldoende","score":"bijv. 6/10 of leeg","toelichting":"...","verbeterpunten":["..."],"voorbeeld":"..."}],"sterk":["..."],"taal":["opvallende taal- of spelfout met verbetering"]}
+"indicatie" is een cijfer van 1 tot 10 met één decimaal.
+${V2.opdracht.trim() ? `\nOPDRACHT:\n${V2.opdracht.slice(0, 6000)}\n` : ''}${V2.algemeen ? '' : `\nBEOORDELINGSFORMULIER:\n${V2.rubric.slice(0, 15000)}\n`}
+VERSLAG:
+${V2.text.slice(0, 60000)}` });
+    if (!r || !Array.isArray(r.criteria)) throw { code: 'invalid_json' };
+    r.algemeen = !!V2.algemeen; r.indicatie = Math.max(1, Math.min(10, Number(r.indicatie) || 0)) || null;
+    V2.result = r; V2.phase = 'done'; markStudy();
+    try { const row = await q(sb.from('verslagen').insert({ titel: String(r.titel || V2.titel || 'Verslag').slice(0, 120), vak_id: V2.vakId || null, feedback: r }).select().single()); S.verslagen = [row, ...(S.verslagen || [])]; } catch (e) { console.warn('verslag opslaan', e); }
+  } catch (e) { aiErr(e); }
+  finally { setBusy(null); render(); window.scrollTo(0, 0); }
+}
+function verslagText(f, titel) {
+  const L = [`Feedback op: ${titel || f.titel || 'verslag'}`, `Indicatie: ${f.indicatie ? fmtCijfer(f.indicatie) : '-'} (${f.oordeel || ''})`, '', f.samenvatting || '', '', 'VERBETER DIT EERST', ...(f.top3 || []).map((x, i) => `${i + 1}. ${x}`), '', 'PER CRITERIUM'];
+  (f.criteria || []).forEach(k => { L.push('', `${k.naam}: ${k.oordeel}${k.score ? ' (' + k.score + ')' : ''}`, k.toelichting || '', ...(k.verbeterpunten || []).map(x => '- ' + x)); if (k.voorbeeld) L.push('Voorbeeld: ' + k.voorbeeld); });
+  if ((f.sterk || []).length) L.push('', 'WAT GOED IS', ...f.sterk.map(x => '- ' + x));
+  if ((f.taal || []).length) L.push('', 'TAAL EN SPELLING', ...f.taal.map(x => '- ' + x));
+  L.push('', 'Gemaakt met Leerpuls. Dit is een indicatie; je docent bepaalt het echte cijfer.');
+  return L.join('\n');
+}
+
+
+/* ---- pushmeldingen op de telefoon (studie.sql + Edge Function Herinneringen) ---- */
+const PUSH = { ok: 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window, sub: null, checked: false };
+async function remFn(body, auth) {
+  const headers = { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_KEY, Authorization: `Bearer ${CFG.SUPABASE_KEY}` };
+  if (auth) { const s2 = await freshSession(); if (!s2) throw { error: 'unauthorized' }; headers.Authorization = `Bearer ${s2.access_token}`; }
+  const r = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.REMINDER_FUNCTION || 'Herinneringen'}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw { error: j.error || 'HTTP ' + r.status }; return j;
+}
+async function pushState() {
+  if (!PUSH.ok) return;
+  try { const reg = await navigator.serviceWorker.getRegistration(); PUSH.sub = reg ? await reg.pushManager.getSubscription() : null; } catch { PUSH.sub = null; }
+  PUSH.checked = true;
+}
+const b64uToBytes = s => { const t = s.replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(t + '='.repeat((4 - t.length % 4) % 4)), c => c.charCodeAt(0)); };
+async function pushOn() {
+  if (INST.ios && !isStandalone()) { toast('Op iPhone werken meldingen alleen als Leerpuls op je beginscherm staat. Zet hem daar eerst neer (zie Account).', 8000); return; }
+  setBusy('Meldingen aanzetten…');
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Je hebt meldingen geweigerd. Je kunt ze later aanzetten in de instellingen van je browser of telefoon.', 8000); return; }
+    const { publicKey } = await remFn({ action: 'vapid' });
+    const reg = await navigator.serviceWorker.ready;
+    let sub2 = await reg.pushManager.getSubscription();
+    if (!sub2) sub2 = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(publicKey) });
+    const j = sub2.toJSON();
+    await q(sb.from('push_subs').upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, apparaat: apparaat() }, { onConflict: 'endpoint' }));
+    PUSH.sub = sub2; toast('Meldingen staan aan! 🔔 Je krijgt meteen een testmelding.', 6000);
+    try { await remFn({ action: 'pushtest' }, true); } catch {}
+  } catch (e) { console.error('push', e); toast(e && e.error === 'setup' ? 'Meldingen zijn nog niet ingesteld (studie.sql en de nieuwe functie Herinneringen).' : 'Meldingen aanzetten lukte niet op dit apparaat.', 8000); }
+  finally { setBusy(null); render(); }
+}
+async function pushOff() {
+  try { const ep = PUSH.sub && PUSH.sub.endpoint; if (PUSH.sub) await PUSH.sub.unsubscribe(); if (ep) await sb.from('push_subs').delete().eq('endpoint', ep); PUSH.sub = null; toast('Meldingen staan uit op dit apparaat.'); } catch (e) { console.error(e); }
+  render();
+}
+function pushPrefs() { return { herhalen: true, toetsen: true, opdrachten: true, uur: 18, ...((S.account && S.account.push_prefs) || {}) }; }
+function pushPanel() {
+  if (!S.account) return '';
+  const P = pushPrefs(); const on = !!PUSH.sub;
+  let body = '';
+  if (!PUSH.ok) body = `<p class="small muted">${INST.ios ? 'Zet Leerpuls eerst op je beginscherm (zie hierboven) en open hem via het icoon. Daarna kun je hier meldingen aanzetten.' : 'Deze browser ondersteunt geen meldingen. Probeer Chrome, Edge of Safari, of zet Leerpuls op je beginscherm.'}</p>`;
+  else if (typeof Notification !== 'undefined' && Notification.permission === 'denied') body = `<p class="small muted">Meldingen zijn geblokkeerd voor Leerpuls. Zet ze aan bij de site-instellingen van je browser (of bij Instellingen → Meldingen op je telefoon) en kom dan terug.</p>`;
+  else body = `<p class="small muted">${on ? 'Meldingen staan aan op dit apparaat. 🔔' : 'Krijg een melding op je telefoon als je flashcards klaarstaan of als je morgen een toets hebt. Werkt beter dan mail!'}</p>
+    ${on ? `<div class="stack" style="gap:6px"><label class="check"><input type="checkbox" data-pushpref="herhalen" ${P.herhalen ? 'checked' : ''}><span>🃏 Flashcards die klaarstaan</span></label>
+      <label class="check"><input type="checkbox" data-pushpref="toetsen" ${P.toetsen ? 'checked' : ''}><span>📝 Toets morgen</span></label>
+      <label class="check"><input type="checkbox" data-pushpref="opdrachten" ${P.opdrachten ? 'checked' : ''}><span>📌 Opdracht morgen inleveren</span></label>
+      <label class="field" style="max-width:220px"><span>Tijdstip</span><select data-pushpref="uur">${[8, 12, 16, 17, 18, 19, 20, 21].map(u => `<option value="${u}" ${+P.uur === u ? 'selected' : ''}>${u}:00</option>`).join('')}</select></label></div>
+      <div class="row"><button class="btn sm ghost" data-act="pushtest">Stuur testmelding</button><button class="link small" data-act="pushoff">Zet uit op dit apparaat</button></div>`
+      : `<div><button class="btn hl" data-act="pushon">🔔 Zet meldingen aan</button></div>`}`;
+  return `<section class="panel"><h3>Meldingen op je telefoon</h3>${body}</section>`;
+}
+function pushSuggest() {
+  if (!PUSH.ok || PUSH.sub || !PUSH.checked || (typeof Notification !== 'undefined' && Notification.permission === 'denied')) return '';
+  if (INST.ios && !isStandalone()) return '';
+  try { if (localStorage.getItem('lp_push_hide') === '1') return ''; } catch {}
+  return `<section class="panel install"><div class="row" style="gap:14px;flex-wrap:nowrap;align-items:flex-start"><span style="font-size:2rem">🔔</span><div style="display:grid;gap:4px"><h3>Herinneringen op je telefoon?</h3><p class="small muted">Een seintje als je flashcards klaarstaan of als je morgen een toets hebt.</p></div></div>
+    <div class="row"><button class="btn hl" data-act="pushon">Zet meldingen aan</button><button class="link small" data-act="pushhide">Niet nu</button></div></section>`;
+}
+
+/* ---- toetsmodus (tentamensimulatie) ---- */
+function examLeft() { const E = S.quiz.examen; return E ? Math.max(0, Math.round((E.start + E.limit * 1000 - Date.now()) / 1000)) : 0; }
+const fmtClock = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+function examView() {
+  const qz = S.quiz, E = qz.examen, cur = qz.qs[qz.i], a = qz.answers[qz.i];
+  const answered = k => qz.qs[k].type === 'mc' ? qz.answers[k] != null : !!(qz.answers[k] || '').trim();
+  const open = qz.qs.filter((x, k) => !answered(k)).length; const left = examLeft();
+  let h = `<div class="stack"><div class="row between"><h2>⏱ ${esc(qz.title)}</h2><div class="row"><span class="examclock ${left < 300 ? 'laag' : ''}" id="examTimer" role="timer" aria-label="Resterende tijd">${fmtClock(left)}</span><button class="btn sm hl" data-act="examsubmit">Inleveren</button></div></div>`;
+  if (S.confirm === 'examsubmit') h += `<div class="notice"><b>Inleveren?</b> ${open ? `Je hebt nog <b>${plural(open, 'vraag', 'vragen')}</b> niet beantwoord. ` : 'Je hebt alle vragen beantwoord. '}${E.flags.length ? `${plural(E.flags.length, 'vraag staat', 'vragen staan')} nog gemarkeerd. ` : ''}Na het inleveren kun je niets meer veranderen.<div class="row" style="margin-top:8px"><button class="btn sm hl" data-act="examdone">Ja, lever in</button><button class="btn sm ghost" data-act="cancel">Nog even verder</button></div></div>`;
+  if (S.confirm === 'examstop') h += `<div class="notice"><b>Stoppen zonder inleveren?</b> Je antwoorden worden niet bewaard.<div class="row" style="margin-top:8px"><button class="btn sm danger" data-act="quizstop">Stop de toets</button><button class="btn sm ghost" data-act="cancel">Annuleer</button></div></div>`;
+  h += `<section class="panel"><div class="examnav" role="navigation" aria-label="Vragen">${qz.qs.map((x, k) => `<button class="${k === qz.i ? 'cur' : ''} ${answered(k) ? 'done' : ''} ${E.flags.includes(k) ? 'flag' : ''}" data-act="examgo" data-k="${k}" aria-label="Vraag ${k + 1}${answered(k) ? ', beantwoord' : ''}${E.flags.includes(k) ? ', gemarkeerd' : ''}">${k + 1}</button>`).join('')}</div>
+    <span class="small muted">${qz.qs.length - open} van ${qz.qs.length} beantwoord${E.flags.length ? ` · 🚩 ${E.flags.length} gemarkeerd` : ''}</span></section>
+    <section class="panel"><div class="row between"><span class="label">Vraag ${qz.i + 1} van ${qz.qs.length}</span>${cur.type === 'open' ? '<span class="pill">open vraag</span>' : ''}</div><p class="q">${esc(cur.question)}</p>`;
+  if (cur.type === 'mc') h += `<div class="opts">${cur.options.map((o, k) => `<button class="opt ${a === k ? 'sel' : ''}" data-act="exammc" data-k="${k}" aria-pressed="${a === k}"><span class="k">${'ABCDEF'[k]}</span><span>${esc(o)}</span></button>`).join('')}</div>`;
+  else h += `<textarea id="examOpen" placeholder="Typ je antwoord in je eigen woorden" data-k="${qz.i}">${esc(a || '')}</textarea>`;
+  h += `<div class="row between"><div class="row"><button class="btn ghost" data-act="examgo" data-k="${qz.i - 1}" ${qz.i === 0 ? 'disabled' : ''}>← Vorige</button><button class="btn ghost" data-act="examflag">${E.flags.includes(qz.i) ? '🚩 Markering weg' : '🚩 Later bekijken'}</button></div>
+    ${qz.i + 1 < qz.qs.length ? `<button class="btn" data-act="examgo" data-k="${qz.i + 1}">Volgende →</button>` : `<button class="btn hl" data-act="examsubmit">Inleveren</button>`}</div></section>
+    <div><button class="link small" data-act="confirm" data-key="examstop">Stoppen zonder inleveren</button></div></div>`;
+  return h;
+}
+setInterval(() => {
+  const qz = S.quiz; if (!qz || qz.phase !== 'run' || !qz.examen || qz.examen.ingeleverd) return;
+  const left = examLeft(); const el = $('#examTimer');
+  if (el) { el.textContent = fmtClock(left); el.classList.toggle('laag', left < 300); }
+  if (left === 300) toast('Nog 5 minuten!');
+  if (left <= 0) { qz.examen.ingeleverd = true; S.confirm = null; toast('De tijd is om. Je toets wordt ingeleverd.', 6000); finishQuiz(); }
+}, 1000);
 
 /* ---- Flashcards ---- */
 function vKaarten() {
@@ -1259,10 +1662,11 @@ function vKaarten() {
   }
   const can = S.sel.cards.size && !S.busy; const now = Date.now();
   return `<div class="stack"><div class="row between"><h2>Flashcards</h2>${aiMeter()}</div>
+  ${sharePanel()}${klasDecksPanel()}
   ${S.decks.length ? `<section class="panel"><div class="row between"><h3>Je sets</h3>${dueCards() ? `<button class="btn hl sm" data-act="study" data-deck="">Herhaal alles wat klaarstaat (${dueCards()})</button>` : ''}</div><div class="list">${S.decks.map(d => {
     const cards = d.cards || []; const due = cards.filter(c => (c.due || 0) <= now).length; const mastered = cards.filter(c => c.box >= 4).length; const conf = S.confirm === 'deck:' + d.id;
     return `<div class="item"><div class="main"><span class="t row" style="gap:8px"><span class="vakdot" style="--vc:${vakColor(d.vak_id)}"></span>${esc(d.title)}</span><span class="small muted">${esc(vakNaam(d.vak_id))} · ${cards.length} kaarten · ${mastered} goed in je hoofd</span></div>${due ? `<span class="pill warn">${due} klaar</span>` : `<span class="pill good">bij</span>`}
-    ${conf ? `<button class="btn sm danger" data-act="deckdel" data-id="${d.id}">Verwijder set</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm" data-act="study" data-deck="${d.id}" ${due ? '' : 'data-all="1"'}>${due ? 'Oefen' : 'Alles oefenen'}</button><button class="link small" data-act="confirm" data-key="deck:${d.id}">Verwijder</button>`}</div>`;
+    ${conf ? `<button class="btn sm danger" data-act="deckdel" data-id="${d.id}">Verwijder set</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm" data-act="study" data-deck="${d.id}" ${due ? '' : 'data-all="1"'}>${due ? 'Oefen' : 'Alles oefenen'}</button>${S.shareErr ? '' : `<button class="btn sm ghost" data-act="deckshare" data-id="${d.id}" aria-expanded="${S.shareDeck === d.id}">${myShare(d.id) ? '🔗 Gedeeld' : 'Delen'}</button>`}<button class="link small" data-act="confirm" data-key="deck:${d.id}">Verwijder</button>`}</div>`;
   }).join('')}</div></section>` : ''}
   <section class="panel"><h3>Nieuwe set maken</h3>${picker('cards')}<div class="field"><span>Aantal kaarten</span>${seg('cards.n', S.cardsSet.n, [[10, '10'], [15, '15'], [25, '25'], [40, '40']])}</div>
   <div><button class="btn" data-act="cardsgo" ${can ? '' : 'disabled'}>Maak flashcards</button></div><p class="small muted">Je oefent volgens het bakjessysteem: wist je een kaart, dan schuift hij een bakje op en zie je hem later pas terug.</p></section></div>`;
@@ -1775,6 +2179,7 @@ function vAccount() {
   <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label><div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
   <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw. Voorlezen met de natuurlijke stem telt niet mee.</p></section>
   ${installPanel('account')}
+  ${pushPanel()}
   ${fbAccount()}
   ${updatesAccount()}
   <section class="panel"><h3>Privacy</h3><p class="small muted">Je stof, antwoorden en gesprekken zijn alleen voor jou zichtbaar. Beheerders zien alleen aantallen.</p><div class="row"><button class="btn ghost" data-act="export">Download al mijn gegevens</button><button class="btn" data-act="logout">Uitloggen</button></div></section>
@@ -1859,8 +2264,8 @@ function updatesBeheer() {
 /* ================= feedback en verbeterpunten (feedback.sql, Edge Function Admin) ================= */
 const FB_SOORT = { idee: '💡 Idee of verbetering', bug: '🐞 Iets werkt niet', compliment: '💛 Compliment', anders: '💬 Anders' };
 const FB_STATUS = { nieuw: 'Nieuw', bekeken: 'Bekeken', gepland: 'Mee bezig', opgelost: 'Opgelost', afgewezen: 'Niet nu' };
-const FB_DEEL = ['Vandaag', 'Agenda', 'Vakken en stof', "Foto's uploaden", 'Oefentoets', 'Flashcards', 'Gesprek oefenen', 'Praten en voorlezen', 'Uitleg & vragen', 'Klassen en opdrachten', 'Inloggen en account', 'Anders'];
-const TAB_DEEL = { vandaag: 'Vandaag', agenda: 'Agenda', vakken: 'Vakken en stof', toets: 'Oefentoets', kaarten: 'Flashcards', gesprek: 'Gesprek oefenen', uitleg: 'Uitleg & vragen', klassen: 'Klassen en opdrachten', account: 'Inloggen en account' };
+const FB_DEEL = ['Vandaag', 'Agenda', 'Vakken en stof', "Foto's uploaden", 'Oefentoets', 'Verslag-feedback', 'Flashcards', 'Gesprek oefenen', 'Praten en voorlezen', 'Uitleg & vragen', 'Klassen en opdrachten', 'Inloggen en account', 'Anders'];
+const TAB_DEEL = { verslag: 'Verslag-feedback', vandaag: 'Vandaag', agenda: 'Agenda', vakken: 'Vakken en stof', toets: 'Oefentoets', kaarten: 'Flashcards', gesprek: 'Gesprek oefenen', uitleg: 'Uitleg & vragen', klassen: 'Klassen en opdrachten', account: 'Inloggen en account' };
 const fbNew = () => S.isAdmin ? (S.feedback || []).filter(f => f.status === 'nieuw').length : 0;
 async function loadFeedback() {
   try { const { data, error } = await sb.from('feedback').select('*').order('created_at', { ascending: false }).limit(300); if (error) throw error; S.feedback = data || []; S.fbErr = false; }
@@ -1950,7 +2355,7 @@ let scrollChat = false;
 function render() {
   const root = $('#app'); if (root.hidden) return;
   const keep = {};
-  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'vStem' && el.id !== 'vWacht' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'vStem' && el.id !== 'vWacht' && el.id !== 'examOpen' && el.id !== 'vsText' && el.id !== 'vsRubric' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
   const act = document.activeElement; const fid = act && root.contains(act) && act.id;
   let ss, se; try { ss = act.selectionStart; se = act.selectionEnd; } catch {}
   const openDetails = [...root.querySelectorAll('details')].map(d => d.open);
@@ -1992,7 +2397,11 @@ STUDIESTOF:
 ${stof}` });
     const qs = (r && r.questions || []).filter(x => x && x.question && ((x.type === 'mc' && Array.isArray(x.options) && x.options.length >= 2 && Number.isInteger(x.answer) && x.answer < x.options.length) || x.type === 'open'));
     if (!qs.length) throw { code: 'invalid_json' };
-    Object.assign(qz, { phase: 'run', qs, i: 0, answers: [], docIds: [...ids], vakId: commonVak(ids), title: String(r.title || 'Oefentoets').slice(0, 80) });
+    Object.assign(qz, { phase: 'run', qs, i: 0, answers: [], docIds: [...ids], vakId: commonVak(ids), title: String(r.title || 'Oefentoets').slice(0, 80), examen: null });
+    if (qz.modus === 'toets' && !qz.opdracht) {
+      const auto = qs.reduce((t, x) => t + (x.type === 'mc' ? 90 : 240), 0);
+      qz.examen = { start: Date.now(), limit: qz.tijd === 'auto' ? Math.max(300, Math.ceil(auto / 60) * 60) : (+qz.tijd) * 60, flags: [], ingeleverd: false };
+    }
   } catch (e) { aiErr(e); }
   finally { setBusy(null); }
 }
@@ -2017,9 +2426,14 @@ ${toGrade.map((o, i) => `${i + 1}. Vraag: ${o.x.question}\nModelantwoord: ${o.x.
   const cijfer = Math.round((1 + 9 * pts / qz.qs.length) * 10) / 10;
   const weak = [...new Set(qz.qs.filter((x, k) => grades[k].score < 1 && x.topic).map(x => x.topic))].slice(0, 6);
   const wrong = qz.qs.map((x, k) => ({ x, k })).filter(o => grades[o.k].score < 1);
-  Object.assign(qz, { phase: 'done', grades, pts, cijfer, weak, wrong });
-  render(); markStudy();
-  try { const row = await q(sb.from('results').insert({ kind: 'toets', vak_id: qz.vakId, title: qz.title, pts, total: qz.qs.length, cijfer, weak }).select().single()); S.results.unshift(row); } catch (e) { dbErr(e); }
+  const onderwerpen = {}; qz.qs.forEach((x, k) => { const t = (x.topic || '').trim(); if (!t) return; const o = onderwerpen[t] || (onderwerpen[t] = [0, 0]); o[0] += grades[k].score; o[1] += 1; });
+  const tijd = qz.examen ? Math.round((Date.now() - qz.examen.start) / 1000) : null;
+  if (qz.examen) qz.examen.ingeleverd = true;
+  Object.assign(qz, { phase: 'done', grades, pts, cijfer, weak, wrong, tijdGebruikt: tijd });
+  S.confirm = null; render(); markStudy();
+  const base = { kind: 'toets', vak_id: qz.vakId, title: qz.title, pts, total: qz.qs.length, cijfer, weak };
+  try { const row = await q(sb.from('results').insert({ ...base, onderwerpen, modus: qz.examen ? 'toetsmodus' : 'oefenen' }).select().single()); S.results.unshift(row); }
+  catch (e) { try { const row = await q(sb.from('results').insert(base).select().single()); S.results.unshift({ ...row, onderwerpen }); } catch (e2) { dbErr(e2); } }
   if (qz.opdracht) await saveOpdrResult({ opdracht_id: qz.opdracht, cijfer, pts, total: qz.qs.length, uitkomst: '' });
 }
 
@@ -2528,7 +2942,7 @@ function klasLesstof(k) {
   const groups = {}; ds.forEach(d => (groups[d.vak] = groups[d.vak] || []).push(d));
   return `<section class="panel"><h3>Lesstof delen met ${esc(k.naam)}</h3>
     <label class="field"><span>Vak</span><input id="kVak" list="kVakList" placeholder="bijv. Marketing" maxlength="60" value="${esc(S.T.vak || '')}"></label><datalist id="kVakList">${vakken.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
-    <label class="drop" id="kdrop"><input type="file" id="kFile" multiple accept=".pdf,.docx,.txt,.md,.csv"><b><span class="desk-only">Sleep bestanden hierheen of klik om te kiezen</span><span class="touch-only">Tik om een bestand te kiezen</span></b><span class="small muted">PDF, Word (.docx) of tekst. Alle leerlingen in de klas zien het direct.</span></label>
+    <label class="drop" id="kdrop"><input type="file" id="kFile" multiple accept=".pdf,.docx,.pptx,.txt,.md,.csv"><b><span class="desk-only">Sleep bestanden hierheen of klik om te kiezen</span><span class="touch-only">Tik om een bestand te kiezen</span></b><span class="small muted">PDF, Word (.docx), PowerPoint (.pptx) of tekst. Alle leerlingen in de klas zien het direct.</span></label>
     <details><summary class="link" style="cursor:pointer">Of plak tekst</summary><div class="stack" style="margin-top:10px"><label class="field"><span>Titel</span><input id="kTitle" placeholder="bijv. Hoofdstuk 3 – Prijsstrategieën"></label><textarea id="kText" placeholder="Plak hier de lesstof"></textarea><div><button class="btn" data-act="kpaste">Delen met de klas</button></div></div></details></section>
     <section class="panel"><div class="row between"><h3>Gedeelde lesstof</h3><span class="label">${ds.length}</span></div>
     ${ds.length ? Object.keys(groups).sort().map(v => `<div class="stack" style="gap:4px"><span class="label">${esc(v)}</span><div class="list">${groups[v].map(d => kdocItem(d, true)).join('')}</div></div>`).join('') : `<p class="small muted">Nog geen lesstof gedeeld. Lesstof heb je nodig voor oefentoetsen en mondelinge opdrachten.</p>`}</section>`;
@@ -2656,8 +3070,8 @@ async function handleKlasFiles(files) {
       try {
         setBusy(`“${f.name}” lezen…`);
         let text = '';
-        if (ext === 'pdf') text = await readPdf(f); else if (ext === 'docx') text = await readDocx(f); else if (['txt', 'md', 'csv'].includes(ext)) text = await f.text();
-        else { toast(`${f.name}: gebruik PDF, Word (.docx) of tekst.`, 6000); continue; }
+        if (ext === 'pdf') text = await readPdf(f); else if (ext === 'docx') text = await readDocx(f); else if (ext === 'pptx') text = await readPptx(f); else if (['txt', 'md', 'csv'].includes(ext)) text = await f.text();
+        else { toast(`${f.name}: gebruik PDF, Word (.docx), PowerPoint (.pptx) of tekst.`, 6000); continue; }
         await addKlasDoc({ klasId: T.sel, vak, title: f.name.replace(/\.[^.]+$/, ''), text, source: ext, file: f });
       } catch (e) { console.error(e); toast(`${f.name} kon niet gelezen worden.`, 6000); }
     }
@@ -2893,7 +3307,46 @@ document.addEventListener('click', async e => {
     if (qz.i + 1 < qz.qs.length) { qz.i++; render(); } else await finishQuiz();
     return;
   }
-  if (a === 'quizstop' || a === 'quiznew') { S.quiz.phase = 'setup'; S.quiz.opdracht = null; render(); return; }
+  if (a === 'quizstop' || a === 'quiznew') { S.quiz.phase = 'setup'; S.quiz.opdracht = null; S.quiz.examen = null; S.confirm = null; render(); return; }
+  if (a === 'pushon') { await pushOn(); return; }
+  if (a === 'pushoff') { await pushOff(); return; }
+  if (a === 'pushhide') { try { localStorage.setItem('lp_push_hide', '1'); } catch {} toast('Later alsnog? Je vindt het bij Account.'); render(); return; }
+  if (a === 'pushtest') { try { const r = await remFn({ action: 'pushtest' }, true); toast(r.sent ? 'Testmelding verstuurd 🔔' : 'Geen apparaat gevonden. Zet meldingen opnieuw aan.', 6000); } catch { toast('Testmelding lukte niet.'); } return; }
+  if (a === 'vsgo') { const t = $('#vsText'); if (t && t.value.trim()) { S.vs.text = t.value; S.vs.pasted = true; } const rb = $('#vsRubric'); if (rb && rb.value.trim()) { S.vs.rubric = rb.value; S.vs.rubricPasted = true; } await runVerslag(); return; }
+  if (a === 'vsnew') { S.vs = null; S.vsView = null; render(); return; }
+  if (a === 'vsagain') { Object.assign(S.vs, { phase: 'setup', text: '', titel: '', pasted: false, result: null }); render(); return; }
+  if (a === 'vsopen') { const v = (S.verslagen || []).find(x => x.id === d.id); if (!v) return; S.vs = { phase: 'done', result: v.feedback, titel: v.titel, text: '', rubric: '', opdracht: '', vakId: v.vak_id || '', algemeen: !!v.feedback.algemeen, oud: true }; render(); window.scrollTo(0, 0); return; }
+  if (a === 'vsdownload') { const V2 = S.vs; download(`feedback-${(V2.titel || 'verslag').replace(/[^\w\- ]+/g, '').slice(0, 40)}.txt`, verslagText(V2.result, V2.titel), 'text/plain;charset=utf-8'); return; }
+  if (a === 'deckshare') { S.shareDeck = S.shareDeck === d.id ? null : d.id; render(); window.scrollTo(0, 0); return; }
+  if (a === 'deckshareclose') { S.shareDeck = null; render(); return; }
+  if (a === 'sharemake') {
+    const dk = S.decks.find(x => x.id === d.id); if (!dk) return;
+    try { await q(sb.from('gedeelde_decks').insert({ title: dk.title, deck_id: dk.id, door: S.account.name || '', cards: (dk.cards || []).map(c => ({ front: c.front, back: c.back })), klas_id: d.klas && S.klas ? S.klas.klas_id : null })); await loadShares(); toast(d.klas ? `Gedeeld met klas ${S.klas.naam}. Je kunt ook de link versturen.` : 'Deellink gemaakt. Stuur hem naar je klasgenoten!', 6000); render(); }
+    catch (err) { dbErr(err); } return;
+  }
+  if (a === 'sharecopy') {
+    const url = deckLink(d.code); const dk = S.decks.find(x => x.id === S.shareDeck);
+    if (navigator.share) { try { await navigator.share({ title: 'Flashcards: ' + (dk ? dk.title : ''), text: `Oefen mee met mijn flashcards "${dk ? dk.title : ''}" in Leerpuls:`, url }); } catch {} return; }
+    try { await navigator.clipboard.writeText(url); toast('Link gekopieerd. Plak hem in WhatsApp of Teams.'); } catch { const i = $('#shareLink'); if (i) { i.select(); toast('Kopieer de link hierboven.'); } }
+    return;
+  }
+  if (a === 'shareupdate') { const sh = (S.myShares || []).find(x => x.id === d.id); const dk = S.decks.find(x => x.id === sh.deck_id); if (!dk) { toast('De oorspronkelijke set bestaat niet meer.'); return; } try { await q(sb.from('gedeelde_decks').update({ title: dk.title, cards: (dk.cards || []).map(c => ({ front: c.front, back: c.back })) }).eq('id', d.id)); await loadShares(); toast('Bijgewerkt. Nieuwe toevoegers krijgen de nieuwste kaarten.'); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'sharestop') { try { await q(sb.from('gedeelde_decks').delete().eq('id', d.id)); await loadShares(); toast('Je deelt deze set niet meer. De link werkt niet meer.'); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'deckimport') { const x = (S.klasDecks || []).find(y => y.id === d.id); if (!x) return; try { await importDeck(x); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'readyquiz') { const ids = S.docs.filter(x => (x.vak_id || '') === (d.vak || '')).map(x => x.id); S.sel.quiz = new Set(ids); S.quiz.phase = 'setup'; S.tab = 'toets'; render(); const f = $('#quizFocus'); if (f) f.value = d.focus || ''; window.scrollTo(0, 0); if (!ids.length) toast('Je hebt nog geen stof bij dit vak.', 6000); return; }
+  if (a === 'cijadd') { const v = vak(d.vak); v.cijfers = [...(Array.isArray(v.cijfers) ? v.cijfers : []), { naam: '', cijfer: '', weging: '' }]; render(); return; }
+  if (a === 'cijdel') { const v = vak(d.vak); v.cijfers = v.cijfers.filter((x, i) => i !== +d.i); saveCijfers(v); render(); return; }
+  if (a === 'focusgo') { const t = $('#focusTaak'); if (t) S.focus.taak = t.value; focusStart('focus'); return; }
+  if (a === 'focuspause') { S.focus.left = focusLeft(); S.focus.fase = 'pauzeer'; focusSave(); render(); return; }
+  if (a === 'focusresume') { S.focus.fase = S.focus.was || 'focus'; S.focus.endAt = Date.now() + S.focus.left * 1000; focusSave(); render(); return; }
+  if (a === 'focusstop') { Object.assign(S.focus, { fase: 'klaar', endAt: 0 }); focusSave(); render(); return; }
+  if (a === 'focusnodone') { S.focusAsk = null; render(); return; }
+  if (a === 'focusdone') { S.focusAsk = null; const [eid, i] = d.key.split(':'); const e = S.exams.find(x => x.id === eid); if (e && e.plan[+i]) { e.plan[+i].done = true; try { await q(sb.from('exams').update({ plan: e.plan }).eq('id', e.id)); toast('Afgevinkt ✓'); } catch (err) { dbErr(err); } } render(); return; }
+  if (a === 'exammc') { S.quiz.answers[S.quiz.i] = +d.k; render(); return; }
+  if (a === 'examgo') { const k = +d.k; if (k >= 0 && k < S.quiz.qs.length) { S.quiz.i = k; S.confirm = null; render(); window.scrollTo(0, 0); } return; }
+  if (a === 'examflag') { const f = S.quiz.examen.flags; const i = f.indexOf(S.quiz.i); i >= 0 ? f.splice(i, 1) : f.push(S.quiz.i); render(); return; }
+  if (a === 'examsubmit') { S.confirm = 'examsubmit'; render(); window.scrollTo(0, 0); return; }
+  if (a === 'examdone') { S.confirm = null; await finishQuiz(); return; }
   if (a === 'quizweak') { const w = S.quiz.weak.join(', '); S.sel.quiz = new Set(S.quiz.docIds.filter(i => S.docs.some(x => x.id === i))); S.quiz.phase = 'setup'; render(); $('#quizFocus').value = w; return; }
   if (a === 'quizcards') {
     const qz = S.quiz;
@@ -3092,6 +3545,24 @@ document.addEventListener('change', async e => {
   if (t.dataset && t.dataset.klasgratis) { try { await q(sb.from('klassen').update({ gratis: t.checked }).eq('id', t.dataset.klasgratis)); toast(t.checked ? 'Deze klas is nu gratis.' : 'Deze klas is niet meer gratis.'); S.admin.rows = null; loadAdmin(); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
   if (t.id === 'vStem') { S.chat.stem = t.value; V.ttsOff = ''; stopSpeaking(); savePrefs(); testStem(); return; }
   if (t.id === 'vRead') { S.chat.read = t.checked; if (!t.checked) stopSpeaking(); else unlockSpeech(); savePrefs(); return; }
+  if (t.dataset && t.dataset.pushpref) {
+    const P = pushPrefs(); const k = t.dataset.pushpref; P[k] = k === 'uur' ? +t.value : t.checked;
+    try { await q(sb.rpc('set_push_prefs', { p: P })); S.account.push_prefs = P; toast('Opgeslagen.'); } catch (err) { dbErr(err); }
+    return;
+  }
+  if (t.dataset && t.dataset.vsfile) {
+    const f = t.files && t.files[0]; t.value = ''; if (!f) return; const which = t.dataset.vsfile;
+    if (f.size > 40e6) { toast('Dit bestand is groter dan 40 MB.'); return; }
+    setBusy(`“${f.name}” lezen…`);
+    try { const txt = await readAnyFile(f); if (which === 'text') { Object.assign(S.vs, { text: txt, titel: f.name.replace(/\.[^.]+$/, ''), pasted: false }); } else { Object.assign(S.vs, { rubric: txt, rubricNaam: f.name, rubricPasted: false, algemeen: false }); } if (txt.trim().length < 50) toast('Er staat (bijna) geen tekst in dit bestand. Is het een scan? Plak de tekst dan.', 7000); }
+    catch (e) { toast(e.message === 'type' ? 'Gebruik PDF, Word (.docx), PowerPoint (.pptx) of tekst.' : `${f.name} kon niet gelezen worden.`, 6000); }
+    finally { setBusy(null); render(); }
+    return;
+  }
+  if (t.id === 'vsAlg') { S.vs.algemeen = t.checked; render(); return; }
+  if (t.dataset && t.dataset.shareklas) { try { await q(sb.from('gedeelde_decks').update({ klas_id: t.checked && S.klas ? S.klas.klas_id : null }).eq('id', t.dataset.shareklas)); await loadShares(); toast(t.checked ? `Je klas ziet deze set nu.` : 'Niet meer zichtbaar voor je klas (de link werkt nog).'); render(); } catch (err) { dbErr(err); } return; }
+  if (t.dataset && t.dataset.cij) { const v = vak(t.dataset.cij); const r = v.cijfers[+t.dataset.i]; const f = t.dataset.f; r[f] = f === 'naam' ? t.value.slice(0, 60) : (t.value === '' ? '' : Math.max(0, Math.min(f === 'cijfer' ? 10 : 100, Number(t.value.replace(',', '.'))))); saveCijfers(v); render(); return; }
+  if (t.dataset && t.dataset.cijdoel) { const v = vak(t.dataset.cijdoel); v.cijferdoel = Math.max(1, Math.min(10, Number(t.value) || 5.5)); saveCijfers(v); render(); return; }
   if (t.id === 'vWacht') { S.chat.wacht = t.value; savePrefs(); render(); return; }
   if (t.id === 'vHands') { S.chat.hands = t.checked; if (t.checked) { S.chat.read = true; unlockSpeech(); } else stopListening(); savePrefs(); render(); return; }
   if (t.dataset && t.dataset.move) {
@@ -3106,6 +3577,8 @@ document.addEventListener('change', async e => {
 document.addEventListener('input', e => {
   if (e.target.id === 'phTitle') S.phTitle = e.target.value;
   if (e.target.id === 'chatIn' && V.cd) cancelCountdown();
+  if (e.target.id === 'vsText' || e.target.id === 'vsRubric') { const V2 = S.vs; if (e.target.id === 'vsText') { V2.text = e.target.value; V2.pasted = true; V2.titel = V2.titel || 'Geplakte tekst'; } else { V2.rubric = e.target.value; V2.rubricPasted = true; } const btn = document.querySelector('[data-act="vsgo"]'); if (btn) btn.disabled = !(V2.text.trim().length > 200 && (V2.rubric.trim().length > 20 || V2.algemeen)); }
+  if (e.target.id === 'examOpen') { S.quiz.answers[+e.target.dataset.k] = e.target.value; const nav = document.querySelector(`.examnav button[data-k="${e.target.dataset.k}"]`); if (nav) nav.classList.toggle('done', !!e.target.value.trim()); }
   if (e.target.dataset && e.target.dataset.filter === 'sb') { S.SBfilter = e.target.value; render(); return; }
   if (e.target.dataset && e.target.dataset.filter) { S.admin.filter = e.target.value; render(); }
 });
