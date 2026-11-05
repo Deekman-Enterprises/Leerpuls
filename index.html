@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
-<meta name="lp-build" content="2026-11-05.3">
+<meta name="lp-build" content="2026-11-06.1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -3197,7 +3197,14 @@ function bindKlasDrop() {
 
 /* ---- beheer: klassen en koppelingen ---- */
 async function loadAdminKlassen() {
-  try { S.admin.klassen = await q(sb.rpc('admin_klassen')); S.admin.klasErr = false; }
+  try {
+    S.admin.klassen = await q(sb.rpc('admin_klassen')); S.admin.klasErr = false;
+    // oudere admin_klassen() zonder "bijkopen" (bijv. na opnieuw draaien van abonnement.sql): los ophalen
+    if (S.admin.klassen.length && !('bijkopen' in S.admin.klassen[0])) {
+      const { data, error } = await sb.from('klassen').select('id, bijkopen');
+      if (!error && data) { const m = new Map(data.map(r => [r.id, r.bijkopen])); S.admin.klassen.forEach(k => { if (m.has(k.id)) k.bijkopen = !!m.get(k.id); }); }
+    }
+  }
   catch (e) { console.warn('admin_klassen', e); S.admin.klassen = []; S.admin.klasErr = true; }
 }
 const klasSelect = (id, sel, attrs = '') => `<select ${id ? `id="${id}"` : ''} ${attrs}><option value="">Geen klas</option>${(S.admin.klassen || []).map(k => `<option value="${k.id}" ${sel === k.id ? 'selected' : ''}>${esc(k.naam)}${k.school ? ' · ' + esc(k.school) : ''}</option>`).join('')}</select>`;
@@ -3211,7 +3218,7 @@ function klassenSection() {
       <span class="small muted">${plural(Number(k.leerlingen), 'leerling', 'leerlingen')} · ${plural(Number(k.opdrachten), 'opdracht', 'opdrachten')} · ${Number(k.lesstof)} lesstof</span>
       <div class="chips" style="margin-top:4px">${(k.docenten || []).map(e => { const d = (A.rows || []).find(r => r.email === e); return `<span class="pill">${esc(d && d.name ? d.name : e)} <button class="link small" data-act="klasunlink" data-klas="${k.id}" data-email="${esc(e)}" aria-label="Ontkoppel ${esc(e)}">✕</button></span>`; }).join('') || '<span class="small muted">Nog geen docent gekoppeld</span>'}</div>
       ${'gratis' in k ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" data-klasgratis="${k.id}" ${k.gratis ? 'checked' : ''}> <b>Gratis klas</b> <span class="muted">(studenten in deze klas betalen niets)</span></label>` : ''}
-      ${'bijkopen' in k ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox" data-klasbijkopen="${k.id}" ${k.bijkopen ? 'checked' : ''}> <b>AI-tegoed bijkopen</b> <span class="muted">(studenten kunnen extra AI-acties kopen als hun tegoed op is)</span></label>` : ''}
+      ${'bijkopen' in k ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox" data-klasbijkopen="${k.id}" ${k.bijkopen ? 'checked' : ''}> <b>AI-tegoed bijkopen</b> <span class="muted">(studenten kunnen extra AI-acties kopen als hun tegoed op is)</span></label>` : 'gratis' in k ? `<label class="small muted" style="display:flex;gap:6px;align-items:center;margin-top:4px" title="Draai eerst tegoed.sql in Supabase"><input type="checkbox" disabled> <b>AI-tegoed bijkopen</b> <span>— nog niet beschikbaar: draai <b>tegoed.sql</b> in Supabase (SQL Editor) en ververs de pagina</span></label>` : ''}
       <div class="row" style="margin-top:6px"><select data-linksel="${k.id}" style="width:auto;max-width:100%"><option value="">Docent koppelen…</option>${docenten.filter(d => !(k.docenten || []).includes(d.email)).map(d => `<option value="${esc(d.email)}">${esc(d.name || d.email)}${d.role === 'admin' ? ' (beheerder)' : ''}</option>`).join('')}</select></div></div>
       ${conf ? `<span class="small">Klas verwijderen? Ook alle lesstof en opdrachten van deze klas worden gewist.</span><button class="btn sm danger" data-act="klasdel" data-id="${k.id}">Verwijder klas</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="link small" data-act="confirm" data-key="klas:${k.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : `<p class="small muted">Nog geen klassen. Maak een klas, koppel er docenten aan en zet studenten erin (bij Accounts).</p>`}
     ${docenten.filter(d => d.role === 'docent').length ? '' : `<p class="small muted">Er zijn nog geen docenten. Docenten vragen toegang aan via het inlogscherm ("Ik ben docent"), of je maakt ze hieronder aan met de rol Docent.</p>`}</section>`;
