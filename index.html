@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Leerpuls</title>
-<meta name="description" content="Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg met AI. Leerpuls by Deekman Enterprises.">
+<meta name="description" content="Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg met AI. Leerpuls by Deekman Enterprise.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23161D36'/%3E%3Crect x='6' y='17' width='20' height='6' fill='%23F4E840'/%3E%3Cpath d='M9 8v14h13' stroke='%23fff' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
-<meta name="lp-build" content="2026-11-02.3">
+<meta name="lp-build" content="2026-11-05.2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -667,7 +667,7 @@ function renderGate() {
     <button class="link" data-gate="skip">Later instellen</button>`;
   if (g.step === 'blocked') body = `<h2>Geen toegang</h2><p>${esc(g.reason)}</p><p class="small muted">Vragen? Mail naar <span class="mono">${OWNER}</span>.</p><div class="row">${g.canRequest && aboOn() ? `<button class="btn hl" data-gate="signup">Account aanmaken</button>` : ''}${g.canRequest ? `<button class="btn ${aboOn() ? 'ghost' : 'hl'}" data-gate="request">Toegang aanvragen</button>` : ''}<button class="btn ghost" data-gate="logout">Terug naar inloggen</button></div>`;
   if (g.step === 'loading') body = `<p class="muted">Bezig met laden…</p>`;
-  $('#gate').innerHTML = `<div class="gatebox"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div><section class="panel">${body}</section>
+  $('#gate').innerHTML = `<div class="gatebox"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprise</span></div><section class="panel">${body}</section>
   <p class="small muted">Leer met je eigen studiestof: oefentoetsen, flashcards, gesprekken oefenen en uitleg.</p></div>`;
   const focus = { email: '#gEmail', code: '#gCode', password: g.email ? '#gPw' : '#gEmail2', setpw: '#gNew' }[g.step];
   if (focus && $(focus)) $(focus).focus();
@@ -825,6 +825,8 @@ async function start(viaCode) {
     showGate('betalen', { toe }); return;
   }
   if (payReturn) { payReturn = false; setTimeout(() => toast('Betaling gelukt! Welkom bij Leerpuls 🎉', 7000), 300); }
+  await loadBijkopen();
+  if (tegoedReturn) { tegoedReturn = false; setTimeout(waitForTegoed, 400); }
   let skip = false; try { skip = sessionStorage.getItem('lp_skip_pw') === '1'; } catch {}
   if (viaCode && !(S.user.user_metadata || {}).password_set && !skip) { showGate('setpw'); return; }
   showApp();
@@ -889,6 +891,7 @@ const commonVak = ids => { const s = [...new Set(S.docs.filter(d => ids.includes
 /* ================= AI ================= */
 function aiErr(e) {
   const c = e && e.code; if (c === 'abort') return;
+  if (c === 'limit' && e.bijkopen) { openTegoed(e.bijkopen, true); return; }
   if (e && e.details !== undefined && e.hint !== undefined) return dbErr(e); // databasefout, geen AI-fout
   const m = {
     limit: `Je AI-tegoed voor vandaag is op (${(e && e.limit) || S.ai.limit} acties). Morgen kun je weer verder; flashcards herhalen en je stof bekijken kan gewoon.`,
@@ -927,8 +930,10 @@ async function callAI(opts, retried) {
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
     if (res.status === 401 && !retried) return callAI(opts, true); // sessie vernieuwen en één keer opnieuw proberen
-    throw { code: j.error || 'upstream', limit: j.limit };
+    if (j.error === 'limit') { S.bijkopen = !!j.bijkopen || S.bijkopen; if (j.bijkopen) S.tegoedPakket = j.bijkopen; }
+    throw { code: j.error || 'upstream', limit: j.limit, bijkopen: j.bijkopen };
   }
+  const ext = res.headers.get('x-ai-extra'); if (ext != null && S.account) S.account.extra_tegoed = Number(ext);
   const rem = res.headers.get('x-ai-remaining');
   if (rem != null && !S.ai.unlimited) S.ai.used = Math.max(0, S.ai.limit - Number(rem));
   if (!onText) { const j = await res.json(); return j.text || ''; }
@@ -1168,7 +1173,7 @@ function view() {
   const name = S.account && S.account.name || ''; const due = dueCards(); const st = streak();
   let h = '';
   if (S.busy) h += `<div class="busy" role="status"><span class="dot"></span>${esc(S.busy)}</div>`;
-  h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprises</span></div>
+  h += `<header class="top"><div class="brand"><h1><span class="mark">Leer</span>puls</h1><span class="by">by Deekman Enterprise</span></div>
   <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}${S.focus && (S.focus.fase === 'focus' || S.focus.fase === 'pauze') ? `<button class="focusmini" id="focusMini" data-act="tab" data-tab="vandaag" title="Focus-timer">${S.focus.fase === 'focus' ? '🎯 ' : '☕ '}${fmtClock(focusLeft())}</button>` : ''}<button class="link small fbbtn" data-act="fbopen" title="Idee, probleem of compliment? Laat het weten">💬 Feedback</button><button class="link small" data-act="tab" data-tab="account" title="Naar je account" style="color:inherit;text-decoration:none">👤 ${esc(name || (S.account && S.account.email) || '')}</button></div></header>`;
   { const all = tabs(); const main = all.filter(t => MAIN_TABS.includes(t[0])); const cur = all.find(t => t[0] === S.tab && !MAIN_TABS.includes(t[0]));
     const menuN = due + (S.isAdmin ? pendingReqs().length + fbNew() : 0);
@@ -1192,7 +1197,51 @@ const vakOptions = (sel, withNone = true) => `${withNone ? `<option value="">Zon
 function aiMeter() {
   if (S.ai.unlimited) return `<span class="small muted">AI-tegoed: onbeperkt</span>`;
   const left = Math.max(0, S.ai.limit - S.ai.used); const pct = S.ai.limit ? (left / S.ai.limit) * 100 : 0;
-  return `<div class="meter"><span class="small muted">AI-tegoed vandaag</span><div class="bar"><i style="width:${pct}%"></i></div><span class="mono small">${left}/${S.ai.limit}</span></div>`;
+  const ex = extraTegoed();
+  return `<div class="meter"><span class="small muted">AI-tegoed vandaag</span><div class="bar"><i style="width:${pct}%"></i></div><span class="mono small">${left}/${S.ai.limit}</span>${ex ? `<span class="pill" title="Gekocht extra tegoed; wordt gebruikt als je dagtegoed op is">+${ex} extra</span>` : ''}${S.bijkopen && tegoedPakket() && !left ? `<button class="btn sm hl" data-act="tegoedopen">⚡ Bijkopen</button>` : ''}</div>`;
+}
+/* ---- extra AI-tegoed bijkopen (tegoed.sql, Edge Function Betalingen actie "tegoed") ---- */
+const extraTegoed = () => Math.max(0, Number(S.account && S.account.extra_tegoed) || 0);
+const tegoedPakket = () => S.tegoedPakket || (ABO.info && ABO.info.tegoed) || null;
+let tegoedReturn = /[?&]tegoed=klaar/.test(location.search);
+if (tegoedReturn) { try { history.replaceState(null, '', location.pathname); } catch {} }
+async function loadBijkopen() {
+  if (!S.account || S.isAdmin || S.isDocent) { S.bijkopen = false; return; }
+  try { const { data, error } = await sb.rpc('mijn_bijkopen'); S.bijkopen = !error && !!data; } catch { S.bijkopen = false; }
+}
+function openTegoed(pakket, op) { S.tg = { pakket: pakket || tegoedPakket(), op: !!op, busy: false, err: '' }; if (!S.tg.pakket) { toast('Bijkopen is nu niet mogelijk.'); S.tg = null; return; } renderTegoed(); }
+function renderTegoed() {
+  const T = S.tg, el = $('#modal');
+  if (!T) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('modal-open'); return; }
+  const pr = '€ ' + String(T.pakket.prijs).replace('.', ',');
+  el.innerHTML = `<div class="modal-bg" data-tg="close"></div><div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="tgT">
+    <div class="row between"><span class="label">AI-tegoed</span><button class="link small" data-tg="close" aria-label="Sluiten">✕</button></div>
+    <h2 id="tgT">${T.op ? 'Je AI-tegoed van vandaag is op' : 'Extra AI-tegoed kopen'}</h2>
+    <p>${T.op ? 'Morgen krijg je weer nieuw tegoed. Wil je nu meteen verder? ' : ''}Koop <b>${T.pakket.aantal} extra AI-acties</b> voor <b>${pr}</b>. Je betaalt eenmalig via iDEAL, er komt geen abonnement bij.</p>
+    <ul class="small muted" style="margin:0;padding-left:18px"><li>Extra tegoed verloopt niet.</li><li>Het wordt pas gebruikt als je gewone tegoed van die dag op is.</li>${extraTegoed() ? `<li>Je hebt nu nog ${extraTegoed()} extra.</li>` : ''}</ul>
+    ${ABO.info && ABO.info.test ? '<p class="small"><b>Testmodus: er wordt niet echt betaald.</b></p>' : ''}
+    ${T.err ? `<div class="notice">${esc(T.err)}</div>` : ''}
+    <div class="row"><button class="btn hl" data-tg="buy" ${T.busy ? 'disabled' : ''}>${T.busy ? 'Even geduld…' : `⚡ Koop ${T.pakket.aantal} voor ${pr}`}</button><button class="btn ghost" data-tg="close">${T.op ? 'Tot morgen' : 'Annuleer'}</button></div></div>`;
+  el.hidden = false; document.body.classList.add('modal-open');
+  const f = el.querySelector('.btn.hl'); if (f) f.focus();
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-tg]'); if (!b || !S.tg) return;
+  if (b.dataset.tg === 'close') { S.tg = null; renderTegoed(); return; }
+  if (b.dataset.tg === 'buy') {
+    S.tg.busy = true; S.tg.err = ''; renderTegoed();
+    try { const r = await payFn({ action: 'tegoed' }, true); if (!r.url) throw { error: 'mollie' }; location.href = r.url; }
+    catch (err) { S.tg.busy = false; S.tg.err = err.error === 'no_bijkopen' ? 'Bijkopen staat niet aan voor jouw klas.' : err.error === 'not_available' ? 'Bijkopen is op dit moment niet mogelijk.' : 'Betalen lukt nu niet' + (err.message ? ': ' + err.message : '') + '. Probeer het later opnieuw.'; renderTegoed(); }
+  }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.tg) { S.tg = null; renderTegoed(); } });
+async function waitForTegoed() {
+  const voor = extraTegoed();
+  for (let i = 0; i < 8; i++) {
+    try { const { data: acc } = await sb.rpc('link_account'); if (acc && Number(acc.extra_tegoed) > voor) { S.account.extra_tegoed = acc.extra_tegoed; render(); toast(`Gelukt! ${acc.extra_tegoed - voor} extra AI-acties toegevoegd ⚡`, 7000); return; } } catch {}
+    await new Promise(r => setTimeout(r, 2500));
+  }
+  toast('Je betaling wordt nog verwerkt. Je extra tegoed verschijnt zo, ververs anders even de pagina. Niet betaald? Dan is er niets afgeschreven.', 9000);
 }
 
 /* ---- Vandaag ---- */
@@ -1627,7 +1676,7 @@ async function pushOff() {
   try { const ep = PUSH.sub && PUSH.sub.endpoint; if (PUSH.sub) await PUSH.sub.unsubscribe(); if (ep) await sb.from('push_subs').delete().eq('endpoint', ep); PUSH.sub = null; toast('Meldingen staan uit op dit apparaat.'); } catch (e) { console.error(e); }
   render();
 }
-function pushPrefs() { return { herhalen: true, toetsen: true, opdrachten: true, uur: 18, ...((S.account && S.account.push_prefs) || {}) }; }
+function pushPrefs() { return { herhalen: true, toetsen: true, opdrachten: true, updates: true, uur: 18, ...((S.account && S.account.push_prefs) || {}) }; }
 function pushPanel() {
   if (!S.account) return '';
   const P = pushPrefs(); const on = !!PUSH.sub;
@@ -1638,6 +1687,7 @@ function pushPanel() {
     ${on ? `<div class="stack" style="gap:6px"><label class="check"><input type="checkbox" data-pushpref="herhalen" ${P.herhalen ? 'checked' : ''}><span>🃏 Flashcards die klaarstaan</span></label>
       <label class="check"><input type="checkbox" data-pushpref="toetsen" ${P.toetsen ? 'checked' : ''}><span>📝 Toets morgen</span></label>
       <label class="check"><input type="checkbox" data-pushpref="opdrachten" ${P.opdrachten ? 'checked' : ''}><span>📌 Opdracht morgen inleveren</span></label>
+      <label class="check"><input type="checkbox" data-pushpref="updates" ${P.updates ? 'checked' : ''}><span>✨ Nieuws over Leerpuls</span></label>
       <label class="field" style="max-width:220px"><span>Tijdstip</span><select data-pushpref="uur">${[8, 12, 16, 17, 18, 19, 20, 21].map(u => `<option value="${u}" ${+P.uur === u ? 'selected' : ''}>${u}:00</option>`).join('')}</select></label></div>
       <div class="row"><button class="btn sm ghost" data-act="pushtest">Stuur testmelding</button><button class="link small" data-act="pushoff">Zet uit op dit apparaat</button></div>`
       : `<div><button class="btn hl" data-act="pushon">🔔 Zet meldingen aan</button></div>`}`;
@@ -2207,8 +2257,8 @@ function vAccount() {
     <div>${S.klas.deelt_resultaten ? `<button class="btn ghost" data-act="share" data-v="0">Stop met delen</button>` : `<button class="btn" data-act="share" data-v="1">Deel mijn opdrachtresultaten</button>`}</div></section>` : ''}
   ${aboPanel()}
   ${S.isDocent ? `<section class="panel"><h3>Docentaccount</h3><p class="small muted">Je beheert ${plural(S.T.klassen.length, 'klas', 'klassen')}. Klassen koppelen gebeurt door de beheerder (${OWNER}).</p></section>` : ''}
-  <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label><div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
-  <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw. Voorlezen met de natuurlijke stem telt niet mee.</p></section>
+  <section class="panel"><h3>Herinneringen en agenda</h3><label class="check"><input type="checkbox" id="mailRem" ${S.account.mail_herinneringen === false ? '' : 'checked'}><span>Herinneringsmails voor toetsen (bij inplannen, en 20, 10, 5 en 1 dag(en) vooraf)${S.klas ? ' en opdrachten' : ''}</span></label>${'mail_updates' in S.account ? `<label class="check"><input type="checkbox" id="mailUpd" ${S.account.mail_updates === false ? '' : 'checked'}><span>Mail mij bij belangrijk nieuws over Leerpuls (een paar keer per jaar)</span></label>` : ''}<div><button class="btn ghost sm" data-act="tab" data-tab="agenda">Koppel aan je eigen agenda</button></div></section>
+  <section class="panel"><h3>AI-tegoed</h3>${aiMeter()}<p class="small muted">Elke AI-actie (toets maken, nakijken, gespreksbeurt, samenvatting) telt als één. Het tegoed begint elke nacht opnieuw. Voorlezen met de natuurlijke stem telt niet mee.</p>${S.bijkopen && tegoedPakket() ? `<div class="row"><button class="btn sm ghost" data-act="tegoedopen">⚡ Extra tegoed kopen (${tegoedPakket().aantal} voor € ${String(tegoedPakket().prijs).replace('.', ',')})</button></div>` : ''}</section>
   ${installPanel('account')}
   ${pushPanel()}
   ${fbAccount()}
@@ -2279,6 +2329,22 @@ function updatesAccount() {
   if (!list.length) return '';
   return `<section class="panel"><h3>✨ Nieuw in Leerpuls</h3><div class="stack" style="gap:10px">${list.map(u => `<details><summary style="cursor:pointer"><b>${esc(u.titel)}</b> <span class="small muted">· ${fmtDate(u.created_at)}</span></summary><div class="md" style="margin-top:6px">${md(u.tekst || '')}</div></details>`).join('')}</div></section>`;
 }
+function updOntvangers(doel) {
+  const rows = S.admin && S.admin.rows;
+  if (!rows) return doel === 'iedereen' ? 'alle actieve gebruikers' : 'alle actieve ' + doel;
+  const n = rows.filter(r => r.active && (doel === 'iedereen' || (doel === 'studenten' ? r.role === 'student' : ['docent', 'admin'].includes(r.role)))).length;
+  return `ongeveer ${plural(n, 'gebruiker', 'gebruikers')}`;
+}
+function updSendResult(r) {
+  const p = [];
+  if (r.mail) p.push(r.mail.al ? 'mail was al eerder verstuurd' : r.mail.error ? `mail: ${r.mail.sent} van ${r.mail.ontvangers} verstuurd (${r.mail.error})` : `📧 ${plural(r.mail.sent, 'mail', 'mails')} verstuurd`);
+  if (r.push) p.push(r.push.al ? 'push was al eerder verstuurd' : r.push.error ? `push: ${r.push.error}` : `🔔 pushmelding naar ${plural(r.push.sent, 'gebruiker', 'gebruikers')}`);
+  return p.join(' · ');
+}
+async function updSend(id, mail, push) {
+  const r = await remFn({ action: 'update', id, mail: !!mail, push: !!push }, true);
+  await loadUpdates(); return updSendResult(r);
+}
 function updatesBeheer() {
   if (S.updErr) return `<section class="panel"><h3>Updates aankondigen</h3><div class="notice">Draai eerst <b>updates.sql</b> in Supabase (SQL Editor).</div></section>`;
   const U = S.upd = S.upd || { doel: 'iedereen' }; const list = S.updates || [];
@@ -2286,9 +2352,15 @@ function updatesBeheer() {
     <label class="field"><span>Titel</span><input id="updTitel" maxlength="120" placeholder="bijv. Praten bij gesprek oefenen werkt beter 🎙️"></label>
     <label class="field"><span>Tekst</span><textarea id="updTekst" maxlength="4000" rows="5" placeholder="Wat is er veranderd? Een lijstje kan met - aan het begin van een regel, vet met **woord**."></textarea></label>
     <div class="field"><span>Voor wie</span>${seg('upd.doel', U.doel, [['iedereen', 'Iedereen'], ['studenten', 'Studenten'], ['docenten', 'Docenten']])}</div>
-    <div class="row"><button class="btn hl" data-act="updsave" ${S.busy ? 'disabled' : ''}>Aankondigen</button><button class="btn ghost" data-act="updpreview">Voorbeeld bekijken</button></div>
-    ${list.length ? `<div class="list" style="margin-top:8px">${list.map(u => { const conf = S.confirm === 'upd:' + u.id; return `<div class="item"><div class="main"><span class="t">${esc(u.titel)} ${u.actief ? '' : '<span class="pill">verborgen</span>'}</span><span class="small muted">${fmtDate(u.created_at)} · ${u.doelgroep}</span></div>
-      ${conf ? `<button class="btn sm danger" data-act="upddel" data-id="${u.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm ghost" data-act="updtoggle" data-id="${u.id}">${u.actief ? 'Verberg' : 'Toon weer'}</button><button class="link small" data-act="confirm" data-key="upd:${u.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : ''}</section>`;
+    <div class="field"><span>Ook versturen <span class="muted small">(alleen voor belangrijke updates)</span></span>
+      <label class="check"><input type="checkbox" id="updMail" ${U.mail ? 'checked' : ''}><span>📧 Ook mailen naar alle gebruikers in de doelgroep</span></label>
+      <label class="check"><input type="checkbox" id="updPush" ${U.push ? 'checked' : ''}><span>🔔 Ook pushmelding sturen (naar wie meldingen aan heeft)</span></label></div>
+    ${S.confirm === 'updsend' ? `<div class="notice"><b>Zeker weten?</b> Er gaat een mail naar ${updOntvangers(U.doel)}. Dat kan niet ongedaan worden. <div class="row" style="margin-top:8px"><button class="btn hl" data-act="updsave" data-ok="1" ${S.busy ? 'disabled' : ''}>Ja, aankondigen en mailen</button><button class="btn ghost" data-act="cancel">Annuleer</button></div></div>`
+      : `<div class="row"><button class="btn hl" data-act="updsave" ${S.busy ? 'disabled' : ''}>${U.mail && U.push ? 'Aankondigen, mailen en pushen' : U.mail ? 'Aankondigen en mailen' : U.push ? 'Aankondigen en pushen' : 'Aankondigen'}</button><button class="btn ghost" data-act="updpreview">Voorbeeld bekijken</button></div>`}
+    ${list.length ? `<div class="list" style="margin-top:8px">${list.map(u => { const conf = S.confirm === 'upd:' + u.id; return `<div class="item"><div class="main"><span class="t">${esc(u.titel)} ${u.actief ? '' : '<span class="pill">verborgen</span>'}</span><span class="small muted">${fmtDate(u.created_at)} · ${u.doelgroep}${u.gemaild_at ? ` · 📧 ${u.gemaild} gemaild` : ''}${u.gepusht_at ? ` · 🔔 ${u.gepusht} gepusht` : ''}</span></div>
+      ${S.confirm === 'updmail:' + u.id ? `<button class="btn sm hl" data-act="updsend" data-id="${u.id}" data-mail="1" ${S.busy ? 'disabled' : ''}>Ja, mail ${updOntvangers(u.doelgroep)}</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : conf ? ''
+      : `${'gemaild_at' in u && !u.gemaild_at ? `<button class="link small" data-act="confirm" data-key="updmail:${u.id}" title="Deze update alsnog mailen">📧 Mail</button>` : ''}${'gepusht_at' in u && !u.gepusht_at ? `<button class="link small" data-act="updsend" data-id="${u.id}" data-push="1" title="Deze update alsnog als pushmelding sturen" ${S.busy ? 'disabled' : ''}>🔔 Push</button>` : ''}`}
+      ${S.confirm === 'updmail:' + u.id ? '' : conf ? `<button class="btn sm danger" data-act="upddel" data-id="${u.id}">Verwijder</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="btn sm ghost" data-act="updtoggle" data-id="${u.id}">${u.actief ? 'Verberg' : 'Toon weer'}</button><button class="link small" data-act="confirm" data-key="upd:${u.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : ''}</section>`;
 }
 
 
@@ -2389,7 +2461,7 @@ let scrollChat = false;
 function render() {
   const root = $('#app'); if (root.hidden) return;
   const keep = {};
-  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'vStem' && el.id !== 'vWacht' && el.id !== 'examOpen' && el.id !== 'vsText' && el.id !== 'vsRubric' && el.id !== 'mailRem' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  root.querySelectorAll('input[id],textarea[id],select[id]').forEach(el => { if (el.type !== 'file' && el.type !== 'password' && el.id !== 'vRead' && el.id !== 'vHands' && el.id !== 'vStem' && el.id !== 'vWacht' && el.id !== 'examOpen' && el.id !== 'vsText' && el.id !== 'vsRubric' && el.id !== 'mailRem' && el.id !== 'mailUpd' && el.id !== 'agPlan' && el.id !== 'agUrl') keep[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
   const act = document.activeElement; const fid = act && root.contains(act) && act.id;
   let ss, se; try { ss = act.selectionStart; se = act.selectionEnd; } catch {}
   const openDetails = [...root.querySelectorAll('details')].map(d => d.open);
@@ -2744,15 +2816,17 @@ async function publicFn(body) {
   if (!res.ok) throw { error: j.error || 'HTTP ' + res.status };
   return j;
 }
-async function adminFn(body) {
-  const { data: { session } } = await sb.auth.getSession();
+async function adminFn(body, retried) {
+  const session = await freshSession(!!retried);
+  if (!session) throw { error: 'unauthorized', message: 'Je bent uitgelogd. Log opnieuw in.' };
   let res;
   try {
     res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.ADMIN_FUNCTION || "Admin"}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: CFG.SUPABASE_KEY }, body: JSON.stringify(body) });
   } catch { throw { error: 'geen verbinding met de Edge Function "Admin" (bestaat hij en is Verify JWT uit?)' }; }
   const j = await res.json().catch(() => ({}));
+  if (res.status === 401 && !retried) return adminFn(body, true);   // sessie verlopen: één keer vernieuwen en opnieuw proberen
   if (!res.ok) {
-    const hint = { 404: 'Edge Function "Admin" niet gevonden', 401: 'login geweigerd door Supabase: zet Verify JWT uit bij de functie "admin"', 403: 'geen beheerdersrechten' }[res.status];
+    const hint = { 404: 'Edge Function "Admin" niet gevonden', 401: j.error === 'unauthorized' ? 'je inlogsessie is verlopen: ververs de pagina of log opnieuw in' : 'login geweigerd door Supabase: zet Verify JWT uit bij de functie "admin"', 403: 'geen beheerdersrechten' }[res.status];
     throw { error: j.error || hint || 'HTTP ' + res.status, message: j.message || j.msg || j.answer || hint || '' };
   }
   return j;
@@ -3136,6 +3210,7 @@ function klassenSection() {
       <span class="small muted">${plural(Number(k.leerlingen), 'leerling', 'leerlingen')} · ${plural(Number(k.opdrachten), 'opdracht', 'opdrachten')} · ${Number(k.lesstof)} lesstof</span>
       <div class="chips" style="margin-top:4px">${(k.docenten || []).map(e => { const d = (A.rows || []).find(r => r.email === e); return `<span class="pill">${esc(d && d.name ? d.name : e)} <button class="link small" data-act="klasunlink" data-klas="${k.id}" data-email="${esc(e)}" aria-label="Ontkoppel ${esc(e)}">✕</button></span>`; }).join('') || '<span class="small muted">Nog geen docent gekoppeld</span>'}</div>
       ${'gratis' in k ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" data-klasgratis="${k.id}" ${k.gratis ? 'checked' : ''}> <b>Gratis klas</b> <span class="muted">(studenten in deze klas betalen niets)</span></label>` : ''}
+      ${'bijkopen' in k ? `<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="checkbox" data-klasbijkopen="${k.id}" ${k.bijkopen ? 'checked' : ''}> <b>AI-tegoed bijkopen</b> <span class="muted">(studenten kunnen extra AI-acties kopen als hun tegoed op is)</span></label>` : ''}
       <div class="row" style="margin-top:6px"><select data-linksel="${k.id}" style="width:auto;max-width:100%"><option value="">Docent koppelen…</option>${docenten.filter(d => !(k.docenten || []).includes(d.email)).map(d => `<option value="${esc(d.email)}">${esc(d.name || d.email)}${d.role === 'admin' ? ' (beheerder)' : ''}</option>`).join('')}</select></div></div>
       ${conf ? `<span class="small">Klas verwijderen? Ook alle lesstof en opdrachten van deze klas worden gewist.</span><button class="btn sm danger" data-act="klasdel" data-id="${k.id}">Verwijder klas</button><button class="btn sm ghost" data-act="cancel">Annuleer</button>` : `<button class="link small" data-act="confirm" data-key="klas:${k.id}">Verwijder</button>`}</div>`; }).join('')}</div>` : `<p class="small muted">Nog geen klassen. Maak een klas, koppel er docenten aan en zet studenten erin (bij Accounts).</p>`}
     ${docenten.filter(d => d.role === 'docent').length ? '' : `<p class="small muted">Er zijn nog geen docenten. Docenten vragen toegang aan via het inlogscherm ("Ik ben docent"), of je maakt ze hieronder aan met de rol Docent.</p>`}</section>`;
@@ -3226,7 +3301,7 @@ function examIcs(e) {
   const vak = e.vak_naam || (e.vak_id ? vakNaam(e.vak_id) : ''); const d8 = e.datum.replace(/-/g, ''); const next = addDaysStr(e.datum, 1).replace(/-/g, '');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   const TZ = ['BEGIN:VTIMEZONE', 'TZID:Europe/Amsterdam', 'BEGIN:DAYLIGHT', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0200', 'TZNAME:CEST', 'DTSTART:19700329T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU', 'END:DAYLIGHT', 'BEGIN:STANDARD', 'TZOFFSETFROM:+0200', 'TZOFFSETTO:+0100', 'TZNAME:CET', 'DTSTART:19701025T030000', 'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU', 'END:STANDARD', 'END:VTIMEZONE'];
-  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Deekman Enterprises//Leerpuls//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...(e.tijd ? TZ : []), 'BEGIN:VEVENT', `UID:toets-${e.id}@leerpuls.deekmanenterprises.com`, `DTSTAMP:${stamp}`];
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Deekman Enterprise//Leerpuls//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...(e.tijd ? TZ : []), 'BEGIN:VEVENT', `UID:toets-${e.id}@leerpuls.deekmanenterprises.com`, `DTSTAMP:${stamp}`];
   if (e.tijd) { const [hh, mm] = e.tijd.split(':'); const endH = String(Math.min(23, +hh + 2)).padStart(2, '0'); L.push(`DTSTART;TZID=Europe/Amsterdam:${d8}T${hh}${mm}00`, `DTEND;TZID=Europe/Amsterdam:${d8}T${endH}${mm}00`); }
   else L.push(`DTSTART;VALUE=DATE:${d8}`, `DTEND;VALUE=DATE:${next}`);
   L.push(`SUMMARY:${icsEscape('📝 ' + e.naam + (vak ? ' (' + vak + ')' : ''))}`, `DESCRIPTION:${icsEscape('Toets uit je Leerpuls-toetsplanner.\n' + location.origin + '/')}`);
@@ -3254,6 +3329,7 @@ document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]'); if (!el || el.disabled || $('#app').hidden) return;
   const a = el.dataset.act; const d = el.dataset;
   try {
+  if (a === 'tegoedopen') { openTegoed(null, false); return; }
   if (a === 'tabmenu') { S.menuOpen = !S.menuOpen; render(); if (S.menuOpen) { const f = document.querySelector('#tabMenu .mi'); if (f) f.focus(); } return; }
   if (a === 'tab') { S.menuOpen = false; if (d.tab !== 'gesprek') { stopSpeaking(); stopListening(); } S.tab = d.tab; S.confirm = null; if (d.tab === 'vakken') S.openVak = null; render(); window.scrollTo(0, 0); return; }
   if (a === 'pick') { const s = S.sel[d.key]; s.has(d.id) ? s.delete(d.id) : s.add(d.id); render(); return; }
@@ -3422,7 +3498,24 @@ document.addEventListener('click', async e => {
     const titel = ($('#updTitel').value || '').trim(), tekst = ($('#updTekst').value || '').trim();
     if (!titel) { toast('Geef de update een titel.'); return; }
     if (a === 'updpreview') { S.popup = { list: [{ id: 'voorbeeld', titel, tekst, created_at: new Date().toISOString() }], i: 0 }; renderPopup(); return; }
-    try { await q(sb.from('app_updates').insert({ titel, tekst, doelgroep: S.upd.doel })); $('#updTitel').value = ''; $('#updTekst').value = ''; await loadUpdates(); toast('Aangekondigd! Gebruikers zien het de volgende keer dat ze Leerpuls openen.', 7000); render(); } catch (err) { dbErr(err); }
+    const mail = !!($('#updMail') && $('#updMail').checked), push = !!($('#updPush') && $('#updPush').checked);
+    if (mail && !d.ok) { S.upd.mail = true; S.upd.push = push; S.confirm = 'updsend'; render(); return; }
+    setBusy('upd'); render();
+    try {
+      const row = await q(sb.from('app_updates').insert({ titel, tekst, doelgroep: S.upd.doel }).select().single());
+      S.confirm = null; S.upd.mail = false; S.upd.push = false; $('#updTitel').value = ''; $('#updTekst').value = '';
+      let extra = '';
+      if (mail || push) { try { extra = await updSend(row.id, mail, push); } catch (err) { extra = 'versturen lukte niet: ' + (err.error || err.message || err) + (err.error === 'setup' ? ' (draai updates-melden.sql)' : ''); } }
+      await loadUpdates(); toast('Aangekondigd! Gebruikers zien het de volgende keer dat ze Leerpuls openen.' + (extra ? ' ' + extra : ''), 9000);
+    } catch (err) { dbErr(err); }
+    finally { setBusy(null); render(); }
+    return;
+  }
+  if (a === 'updsend') {
+    setBusy('upd'); S.confirm = null; render();
+    try { toast(await updSend(d.id, d.mail === '1', d.push === '1') || 'Verstuurd.', 8000); }
+    catch (err) { toast('Versturen lukte niet: ' + (err.error || err.message || err) + (err.error === 'setup' ? ' (draai updates-melden.sql)' : ''), 8000); }
+    finally { setBusy(null); render(); }
     return;
   }
   if (a === 'updtoggle') { const u = (S.updates || []).find(x => x.id === d.id); try { await q(sb.from('app_updates').update({ actief: !u.actief }).eq('id', d.id)); await loadUpdates(); render(); } catch (err) { dbErr(err); } return; }
@@ -3554,6 +3647,8 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset && t.dataset.photo) { const files = [...(t.files || [])]; t.value = ''; if (files.length) { const ti = $('#phTitle'); if (ti) S.phTitle = ti.value; const pv = $('#phVak'); if (pv) S.phVak = pv.value; await addPhotos(files); render(); } return; }
   if (t.id === 'phVak') { S.phVak = t.value; return; }
+  if (t.id === 'updMail' || t.id === 'updPush') { S.upd = S.upd || { doel: 'iedereen' }; S.upd[t.id === 'updMail' ? 'mail' : 'push'] = t.checked; render(); return; }
+  if (t.id === 'mailUpd') { try { await q(sb.rpc('set_mail_updates', { p: t.checked })); S.account.mail_updates = t.checked; toast(t.checked ? 'Je krijgt weer mail bij nieuws over Leerpuls.' : 'Geen mails meer over nieuws in Leerpuls.'); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
   if (t.id === 'mailRem') { try { await q(sb.rpc('set_mail_herinneringen', { p: t.checked })); S.account.mail_herinneringen = t.checked; toast(t.checked ? 'Herinneringsmails staan aan.' : 'Herinneringsmails staan uit.'); render(); } catch (err) { dbErr(err); } return; }
   if (t.id === 'agPlan') { S.ag.plan = t.checked; try { localStorage.setItem('lp_agplan', t.checked ? '1' : '0'); } catch {} render(); toast('Link aangepast. Koppel je agenda opnieuw met de nieuwe link als je dit wilt toepassen.', 7000); return; }
   if (t.dataset && t.dataset.linksel) { if (!t.value) return; try { await q(sb.from('klas_docenten').insert({ klas_id: t.dataset.linksel, docent_email: t.value })); await loadAdminKlassen(); await loadKlasData(); toast('Docent gekoppeld aan de klas.'); render(); } catch (err) { dbErr(err); } return; }
@@ -3577,6 +3672,7 @@ document.addEventListener('change', async e => {
     return;
   }
   if (t.dataset && t.dataset.gratis) { try { await q(sb.from('accounts').update({ gratis: t.checked }).eq('email', t.dataset.gratis)); toast(t.checked ? 'Gratis toegang aangezet.' : 'Gratis toegang uitgezet. Zonder gratis klas of abonnement moet deze student nu betalen.', 7000); S.admin.rows = null; loadAdmin(); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
+  if (t.dataset && t.dataset.klasbijkopen) { try { await q(sb.from('klassen').update({ bijkopen: t.checked }).eq('id', t.dataset.klasbijkopen)); const k = (S.admin.klassen || []).find(x => x.id === t.dataset.klasbijkopen); if (k) k.bijkopen = t.checked; toast(t.checked ? 'Studenten in deze klas kunnen nu AI-tegoed bijkopen.' + (ABO.info && ABO.info.tegoed ? '' : ' Let op: zet nog TEGOED_PRIJS bij de Secrets in Supabase.') : 'Bijkopen staat uit voor deze klas.', 7000); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
   if (t.dataset && t.dataset.klasgratis) { try { await q(sb.from('klassen').update({ gratis: t.checked }).eq('id', t.dataset.klasgratis)); toast(t.checked ? 'Deze klas is nu gratis.' : 'Deze klas is niet meer gratis.'); S.admin.rows = null; loadAdmin(); } catch (err) { dbErr(err); t.checked = !t.checked; } return; }
   if (t.id === 'vStem') { S.chat.stem = t.value; V.ttsOff = ''; stopSpeaking(); savePrefs(); testStem(); return; }
   if (t.id === 'vRead') { S.chat.read = t.checked; if (!t.checked) stopSpeaking(); else unlockSpeech(); savePrefs(); return; }
