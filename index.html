@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
-<meta name="lp-build" content="2026-11-16.1">
+<meta name="lp-build" content="2026-11-16.2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -2489,8 +2489,20 @@ function updSendResult(r) {
   if (r.push) p.push(r.push.al ? 'push was al eerder verstuurd' : r.push.error ? `push: ${r.push.error}` : `🔔 pushmelding naar ${plural(r.push.sent, 'gebruiker', 'gebruikers')}`);
   return p.join(' · ');
 }
+function updErrTxt(err) {
+  const c = err && err.error;
+  if (c === 'setup') return 'draai eerst updates-melden.sql in Supabase.';
+  if (c === 'unauthorized') return 'je inlogsessie is verlopen of de Edge Function "Updates" bestaat nog niet. Ververs de pagina; maak anders de functie "Updates" aan (Verify JWT uit).';
+  if (c === 'forbidden') return 'alleen de beheerder mag updates mailen.';
+  return (err && (err.message || c)) || String(err);
+}
 async function updSend(id, mail, push) {
-  const r = await remFn({ action: 'update', id, mail: !!mail, push: !!push }, true);
+  // eigen Edge Function "Updates" (16 nov 2026); bestaat die nog niet, dan de oude route via Herinneringen
+  const s2 = await freshSession(); if (!s2) throw { error: 'unauthorized' };
+  let r;
+  const res = await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.UPDATES_FUNCTION || 'Updates'}`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_KEY, Authorization: `Bearer ${s2.access_token}` }, body: JSON.stringify({ id, mail: !!mail, push: !!push }) }).catch(() => null);
+  if (res && res.status !== 404) { const j = await res.json().catch(() => ({})); if (!res.ok) throw { error: j.error || 'HTTP ' + res.status, message: j.message }; r = j; }
+  else r = await remFn({ action: 'update', id, mail: !!mail, push: !!push }, true);
   await loadUpdates(); return updSendResult(r);
 }
 function updatesBeheer() {
@@ -3679,7 +3691,7 @@ document.addEventListener('click', async e => {
       const row = await q(sb.from('app_updates').insert({ titel, tekst, doelgroep: S.upd.doel }).select().single());
       S.confirm = null; S.upd.mail = false; S.upd.push = false; $('#updTitel').value = ''; $('#updTekst').value = '';
       let extra = '';
-      if (mail || push) { try { extra = await updSend(row.id, mail, push); } catch (err) { extra = 'versturen lukte niet: ' + (err.error || err.message || err) + (err.error === 'setup' ? ' (draai updates-melden.sql)' : ''); } }
+      if (mail || push) { try { extra = await updSend(row.id, mail, push); } catch (err) { extra = 'Mailen/pushen lukte niet: ' + updErrTxt(err); } }
       await loadUpdates(); toast('Aangekondigd! Gebruikers zien het de volgende keer dat ze Leerpuls openen.' + (extra ? ' ' + extra : ''), 9000);
     } catch (err) { dbErr(err); }
     finally { setBusy(null); render(); }
@@ -3688,7 +3700,7 @@ document.addEventListener('click', async e => {
   if (a === 'updsend') {
     setBusy('upd'); S.confirm = null; render();
     try { toast(await updSend(d.id, d.mail === '1', d.push === '1') || 'Verstuurd.', 8000); }
-    catch (err) { toast('Versturen lukte niet: ' + (err.error || err.message || err) + (err.error === 'setup' ? ' (draai updates-melden.sql)' : ''), 8000); }
+    catch (err) { toast('Versturen lukte niet: ' + updErrTxt(err), 9000); }
     finally { setBusy(null); render(); }
     return;
   }
