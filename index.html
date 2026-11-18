@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#161D36">
-<meta name="lp-build" content="2026-11-16.2">
+<meta name="lp-build" content="2026-11-18.1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Leerpuls">
@@ -120,6 +120,27 @@ input[type=checkbox]{width:auto}
 .chip{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:20px;padding:5px 12px;font-size:.9rem;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip[aria-pressed="true"]{background:var(--hl);border-color:var(--hl-solid);font-weight:700}
 .mkt{border-top:4px solid var(--v5, var(--hl-solid))}
+.tab .ti{display:none}
+@media (max-width:440px){.tab .tl{display:none}.tab .ti{display:inline}.tabs .tab[data-tab="account"]{display:none}.tab.menubtn .ml{display:none!important}}
+.tab .dot{margin-left:4px}
+.nbadge{display:inline-block;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--hl-solid);color:#161D36;font-size:12px;font-weight:800;line-height:20px;text-align:center}
+.beritem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.beritem:hover{border-color:var(--hl-solid)}
+.beritem .main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.beritem .ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.berlist{display:grid;gap:6px}
+.av{flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--hl);color:#161D36;font-weight:800}
+.av.klas{background:var(--paper);border:1px solid var(--line)}
+.berchat{max-height:60vh;min-height:180px}
+.berchat .msg{position:relative;white-space:normal}
+.berchat .msg>div:first-of-type{white-space:pre-wrap}
+.berchat .msg a{color:inherit}
+.berfile{margin-top:6px}
+.berstof{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(127,127,127,.12);display:grid;gap:6px}
+.berx{position:absolute;top:4px;right:6px;color:inherit;opacity:.5;text-decoration:none}
+.berx:hover{opacity:1}
+.berpick{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;max-height:320px;overflow:auto;display:grid;gap:6px}
+.bercomp textarea{width:100%}
 .mkt-h{margin:16px 0 8px;font-size:1rem}
 .mkt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
 .mkt-tile{display:flex;flex-direction:column;gap:2px;text-align:left;font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer}
@@ -842,7 +863,8 @@ async function start(viaCode) {
 }
 async function showApp() {
   $('#gate').hidden = true; $('#app').hidden = false;
-  render(); await loadAll(); if (S.isAdmin) await loadRequests(); await loadUpdates(); await loadFeedback(); await loadShares(); await loadVerslagen(); await pushState(); render();
+  render(); await loadAll(); if (S.isAdmin) await loadRequests(); await loadUpdates(); await loadFeedback(); await loadShares(); await loadVerslagen(); await pushState(); await loadGesprekken(); berPoll(); render();
+  if (berLink) { const id = berLink; berLink = null; await openGesprek(id); }
   setTimeout(() => { checkDeckLink(); if (!S.deckOffer) showUpdatePopup(); }, 600);
 }
 if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { started = false; showGate('email'); } });
@@ -1159,21 +1181,22 @@ async function handleFiles(files, vakId, title) {
 
 /* ================= weergaven ================= */
 function tabs() {
-  const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen'], ['verslag', 'Verslag']];
+  const t = [['vandaag', 'Vandaag'], ['agenda', 'Agenda'], ['berichten', 'Berichten'], ...(isTeacher() ? [['klassen', 'Klassen']] : []), ['vakken', 'Vakken'], ['toets', 'Oefentoets'], ['kaarten', 'Flashcards'], ['gesprek', 'Gesprek oefenen'], ['uitleg', 'Uitleg & vragen'], ['verslag', 'Verslag']];
   if (S.isSchoolAdmin) t.push(['school', 'School']);
   if (S.isAdmin) t.push(['beheer', 'Beheer', pendingReqs().length]);
   t.push(['account', 'Account']);
   return t;
 }
-const MAIN_TABS = ['vandaag', 'agenda', 'vakken', 'account'];
+const MAIN_TABS = ['vandaag', 'agenda', 'berichten', 'vakken', 'account'];
 const TAB_INFO = {
   klassen: ['🧑‍🏫', 'Je klassen, opdrachten en klastoetsen'], toets: ['📝', 'Oefen met vragen uit je eigen stof'], kaarten: ['🗂️', 'Herhalen op het juiste moment'],
   gesprek: ['🎙️', 'Spreek een gesprek of pitch na'], uitleg: ['💡', 'Laat stof uitleggen en stel vragen'], verslag: ['📄', 'Feedback op je verslag of opdracht'],
-  school: ['🏫', 'Studenten, klassen en plekken van je school'], beheer: ['⚙️', 'Accounts, aanvragen, updates en feedback']
+  school: ['🏫', 'Studenten, klassen en plekken van je school'], beheer: ['⚙️', 'Accounts, aanvragen, updates en feedback'],
+  account: ['👤', 'Je gegevens, abonnement en meldingen'], berichten: ['✉️', 'Berichten van en naar je docent en klas']
 };
 function tabMenu(due) {
   const all = tabs(); const has = k => all.some(t => t[0] === k);
-  const groups = [['Leren', ['toets', 'kaarten', 'gesprek', 'uitleg', 'verslag']], ['Lesgeven', ['klassen']], ['Beheer', ['school', 'beheer']]];
+  const groups = [['Leren', ['toets', 'kaarten', 'gesprek', 'uitleg', 'verslag']], ['Lesgeven', ['klassen']], ['Beheer', ['school', 'beheer']], ['Jij', ['account']]];
   const badge = k => k === 'kaarten' ? due : k === 'beheer' ? pendingReqs().length + fbNew() : 0;
   return `<div class="tabmenu" id="tabMenu" role="menu">${groups.map(([g, ks]) => { const it = ks.filter(has); if (!it.length) return ''; return `<h4>${g}</h4>${it.map(k => { const l = all.find(t => t[0] === k)[1]; const [ic, sub] = TAB_INFO[k] || ['•', '']; const n = badge(k); return `<button class="mi" role="menuitem" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}><span class="ic" aria-hidden="true">${ic}</span><span><b>${esc(l)}</b><small>${sub}</small></span>${n ? `<span class="dot">${n}</span>` : ''}</button>`; }).join('')}`; }).join('')}</div>`;
 }
@@ -1187,8 +1210,8 @@ function view() {
   <div class="meta">${st ? `<span class="streak" title="Dagen achter elkaar geoefend">${st} ${st === 1 ? 'dag' : 'dagen'} op rij</span>` : ''}${S.focus && (S.focus.fase === 'focus' || S.focus.fase === 'pauze') ? `<button class="focusmini" id="focusMini" data-act="tab" data-tab="vandaag" title="Focus-timer">${S.focus.fase === 'focus' ? '🎯 ' : '☕ '}${fmtClock(focusLeft())}</button>` : ''}<button class="link small fbbtn" data-act="fbopen" title="Idee, probleem of compliment? Laat het weten">💬 Feedback</button><button class="link small" data-act="tab" data-tab="account" title="Naar je account" style="color:inherit;text-decoration:none">👤 ${esc(name || (S.account && S.account.email) || '')}</button></div></header>`;
   { const all = tabs(); const main = all.filter(t => MAIN_TABS.includes(t[0])); const cur = all.find(t => t[0] === S.tab && !MAIN_TABS.includes(t[0]));
     const menuN = due + (S.isAdmin ? pendingReqs().length + fbNew() : 0);
-    h += `<nav class="tabs" aria-label="Onderdelen">${main.map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}<button class="tab menubtn" data-act="tabmenu" aria-haspopup="menu" aria-expanded="${S.menuOpen ? 'true' : 'false'}" ${cur ? 'aria-current="page"' : ''}><span aria-hidden="true">☰</span>${cur ? `<span class="ml cur">${esc(cur[1])}</span><span class="ml alt">Menu</span>` : '<span class="ml">Menu</span>'}${menuN && !S.menuOpen ? `<span class="dot" aria-label="${menuN} nieuw">${menuN}</span>` : ''}</button>${S.menuOpen ? tabMenu(due) : ''}</nav>`; }
-  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, verslag: vVerslag, beheer: vBeheer, school: vSchool, account: vAccount })[S.tab]();
+    h += `<nav class="tabs" aria-label="Onderdelen">${main.map(([k, l]) => `<button class="tab" data-act="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'berichten' ? `<span class="tl">${l}</span><span class="ti" aria-hidden="true">✉️</span>${postUnread() ? `<span class="dot" aria-label="${postUnread()} ongelezen">${postUnread()}</span>` : ''}` : l}</button>`).join('')}<button class="tab menubtn" data-act="tabmenu" aria-haspopup="menu" aria-expanded="${S.menuOpen ? 'true' : 'false'}" ${cur ? 'aria-current="page"' : ''}><span aria-hidden="true">☰</span>${cur ? `<span class="ml cur">${esc(cur[1])}</span><span class="ml alt">Menu</span>` : '<span class="ml">Menu</span>'}${menuN && !S.menuOpen ? `<span class="dot" aria-label="${menuN} nieuw">${menuN}</span>` : ''}</button>${S.menuOpen ? tabMenu(due) : ''}</nav>`; }
+  h += ({ vandaag: vVandaag, vakken: vVakken, toets: vToets, kaarten: vKaarten, klassen: vKlassen, agenda: vAgenda, gesprek: vGesprek, uitleg: vUitleg, verslag: vVerslag, berichten: vBerichten, beheer: vBeheer, school: vSchool, account: vAccount })[S.tab]();
   return h;
 }
 function picker(key, hint) {
@@ -1489,6 +1512,170 @@ ${await material(mktDocs(vakId), 30000)}` });
   } catch (e) { aiErr(e); }
   finally { setBusy(null); }
 }
+
+/* ================= Berichten (18 nov 2026) =================
+   Docent → hele klas (klasgesprek) of één student, student → docent of klasgenoot. Tekst, bestanden (bucket
+   "berichten") en stof uit de app (document of flashcardset). Pushmelding via Edge Function "Berichten". */
+const P0 = () => (S.post = S.post || { list: null, err: false, open: null, msgs: {}, leden: {}, kies: false, contacts: null, zoek: '', files: [], stof: null, stofKies: false, stofZoek: '', save: null, sending: false });
+const postUnread = () => { const P = P0(); return (P.list || []).reduce((n, g) => n + Number(g.ongelezen || 0), 0); };
+async function loadGesprekken() {
+  const P = P0();
+  try { const { data, error } = await sb.rpc('mijn_gesprekken'); if (error) { P.err = /mijn_gesprekken|function|schema/i.test(error.message || '') ? 'setup' : 'fout'; return; } P.err = false; P.list = data || []; }
+  catch { P.err = 'fout'; }
+}
+async function loadBerichten(gid, alleenNieuw) {
+  const P = P0(); const cur = P.msgs[gid] || [];
+  let qb = sb.from('berichten').select('*').eq('gesprek_id', gid).order('created_at', { ascending: true }).limit(300);
+  if (alleenNieuw && cur.length) qb = qb.gt('created_at', cur[cur.length - 1].created_at);
+  const rows = await q(qb);
+  P.msgs[gid] = alleenNieuw ? cur.concat(rows.filter(r => !cur.some(c => c.id === r.id))) : rows;
+  if (!alleenNieuw) { try { P.leden[gid] = await q(sb.from('gesprek_leden').select('user_id, geblokkeerd').eq('gesprek_id', gid)); } catch { P.leden[gid] = []; } }
+  if (rows.length || !alleenNieuw) { try { await sb.rpc('gesprek_gelezen_zetten', { p_gesprek: gid }); } catch {} const g = (P.list || []).find(x => x.id === gid); if (g) g.ongelezen = 0; }
+  return rows.length;
+}
+async function openGesprek(gid) {
+  const P = P0(); P.open = gid; P.kies = false; P.files = []; P.stof = null; P.stofKies = false; P.save = null; S.tab = 'berichten';
+  setBusy('Berichten laden…');
+  try { if (!(P.list || []).some(g => g.id === gid)) await loadGesprekken(); await loadBerichten(gid, false); } catch (e) { dbErr(e); }
+  finally { setBusy(null); scrollBerichten(); }
+}
+function scrollBerichten() { setTimeout(() => { const b = $('#berBox'); if (b) b.scrollTop = b.scrollHeight; }, 30); }
+const fmtTijd = ts => { const d = new Date(ts), now = new Date(); const t = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }); if (d.toDateString() === now.toDateString()) return t; const y = new Date(now); y.setDate(y.getDate() - 1); if (d.toDateString() === y.toDateString()) return 'gisteren ' + t; return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + ' ' + t; };
+const fmtBytes = n => n > 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' kB';
+const linkText = t => esc(t).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+const initiaal = s => esc((String(s || '?').trim()[0] || '?').toUpperCase());
+function vBerichten() {
+  const P = P0();
+  if (P.err === 'setup') return `<div class="stack"><h2>Berichten</h2><div class="notice">Berichten zijn nog niet ingesteld. ${S.isAdmin ? 'Draai <b>berichten.sql</b> in Supabase (SQL Editor) en ververs de pagina.' : 'De beheerder moet dit nog aanzetten.'}</div></div>`;
+  if (P.open) return vGesprekOpen();
+  let h = `<div class="stack"><div class="row between"><h2>Berichten</h2><button class="btn hl" data-act="bernieuw">✏️ Nieuw bericht</button></div>`;
+  if (P.kies) h += berKiezer();
+  if (P.list === null) h += `<p class="muted">Laden…</p>`;
+  else if (!P.list.length && !P.kies) h += `<section class="panel"><p>Nog geen berichten.</p><p class="small muted">${isTeacher() ? 'Stuur uitleg, stof of een bestand naar je hele klas of naar één student.' : 'Stel een vraag aan je docent of stuur stof naar een klasgenoot.'} Klik op <b>Nieuw bericht</b>.</p></section>`;
+  else h += `<div class="list berlist">${P.list.map(g => `<button class="item beritem" data-act="beropen" data-id="${g.id}"><span class="av ${g.soort === 'klas' ? 'klas' : ''}">${g.soort === 'klas' ? '👥' : initiaal(g.titel)}</span><span class="main"><span class="t">${esc(g.titel)} ${g.sub ? `<span class="pill">${esc(g.sub)}</span>` : ''}</span><span class="small muted ell">${g.laatste ? `${g.laatste_van ? esc(g.laatste_van.split(' ')[0]) + ': ' : ''}${esc(g.laatste)}` : 'Nog geen berichten'}</span></span><span class="stack" style="gap:4px;align-items:flex-end"><span class="small muted">${fmtTijd(g.laatste_at)}</span>${Number(g.ongelezen) ? `<span class="nbadge">${g.ongelezen}</span>` : ''}</span></button>`).join('')}</div>`;
+  return h + `</div>`;
+}
+function berKiezer() {
+  const P = P0(); const z = P.zoek.toLowerCase();
+  let h = `<section class="panel"><div class="row between"><h3>Naar wie?</h3><button class="link small" data-act="berkiesdicht">Sluiten</button></div>`;
+  const klassen = isTeacher() ? (S.T.klassen || []) : (S.klas ? [{ id: S.klas.klas_id, naam: S.klas.naam }] : []);
+  if (klassen.length) h += `<div class="stack" style="gap:6px"><span class="label">${isTeacher() ? 'Hele klas' : 'Je klas'}</span><div class="chips">${klassen.map(k => `<button class="chip" data-act="berklas" data-id="${k.id}">👥 ${isTeacher() ? 'Klas ' : 'Klasgesprek '}${esc(k.naam)}</button>`).join('')}</div>${isTeacher() ? '' : '<span class="small muted">Iedereen uit je klas en je docent lezen mee.</span>'}</div>`;
+  if (P.contacts === null) h += `<p class="small muted">Laden…</p>`;
+  else {
+    const cs = P.contacts.filter(c => !z || (c.naam + ' ' + c.klas).toLowerCase().includes(z));
+    const groep = isTeacher() ? [['student', 'Studenten']] : [['docent', 'Je docent'], ['klasgenoot', 'Klasgenoten']];
+    h += `<label class="field" style="margin-top:10px"><span>Zoek een naam</span><input id="berZoek" value="${esc(P.zoek)}" placeholder="Typ een naam…" autocomplete="off"></label>`;
+    for (const [s, l] of groep) {
+      const it = cs.filter(c => c.soort === s); if (!it.length) continue;
+      h += `<span class="label">${l}</span><div class="list">${it.slice(0, 60).map(c => `<button class="item beritem" data-act="berstart" data-id="${c.user_id}"><span class="av">${initiaal(c.naam)}</span><span class="main"><span class="t">${esc(c.naam)}</span><span class="small muted">${c.rol === 'docent' ? 'Docent' : 'Student'}${c.klas ? ' · ' + esc(c.klas) : ''}</span></span></button>`).join('')}</div>`;
+    }
+    if (!P.contacts.length) h += `<p class="small muted">${isTeacher() ? 'Er zitten nog geen studenten in je klassen.' : S.klas ? 'Er is nog niemand anders in je klas.' : 'Je zit nog niet in een klas. Berichten sturen kan alleen binnen je klas.'}</p>`;
+  }
+  return h + `</section>`;
+}
+function vGesprekOpen() {
+  const P = P0(); const g = (P.list || []).find(x => x.id === P.open) || { titel: 'Gesprek', soort: 'direct' };
+  const msgs = P.msgs[P.open] || []; const leden = P.leden[P.open] || [];
+  const ikBlok = leden.some(l => l.user_id === S.user.id && l.geblokkeerd), anderBlok = leden.some(l => l.user_id !== S.user.id && l.geblokkeerd);
+  let h = `<div class="stack"><div class="row between"><div class="row" style="gap:10px"><button class="btn sm ghost" data-act="berterug">← Berichten</button><div><b>${esc(g.titel)}</b>${g.sub ? ` <span class="pill">${esc(g.sub)}</span>` : ''}</div></div>
+    ${g.soort === 'direct' ? `<button class="link small" data-act="berblok" data-aan="${ikBlok ? '0' : '1'}">${ikBlok ? 'Deblokkeer' : 'Blokkeer'}</button>` : ''}</div>`;
+  h += `<section class="panel" style="padding:10px"><div class="chat berchat" id="berBox">${msgs.length ? msgs.map(berMsg).join('') : `<p class="small muted" style="text-align:center">${g.soort === 'klas' ? 'Stuur iets naar de hele klas.' : 'Nog geen berichten. Zeg hallo! 👋'}</p>`}</div></section>`;
+  if (ikBlok || anderBlok) return h + `<div class="notice">${ikBlok ? 'Je hebt dit gesprek geblokkeerd. Je kunt geen berichten sturen of ontvangen. Klik op Deblokkeer om weer te kunnen praten.' : 'Je kunt in dit gesprek geen berichten meer sturen.'}</div></div>`;
+  h += berComposer() + `</div>`;
+  return h;
+}
+function berMsg(m) {
+  const P = P0(); const mine = m.afzender_id === S.user.id; const conf = S.confirm === 'berdel:' + m.id;
+  let h = `<div class="msg ${mine ? 'me' : 'ai'}"><div class="who-l">${mine ? 'Jij' : esc(m.afzender_naam)}${!mine && m.afzender_rol === 'docent' ? ' · docent' : ''} · ${fmtTijd(m.created_at)}</div>`;
+  if (m.tekst) h += `<div>${linkText(m.tekst)}</div>`;
+  for (const f of (m.bijlagen || [])) {
+    const leesbaar = /\.(pdf|docx|pptx|txt|md)$/i.test(f.naam || '');
+    const sv = P.save && P.save.id === m.id && P.save.pad === f.pad;
+    h += `<div class="berfile"><button class="link" data-act="berfile" data-pad="${esc(f.pad)}">📎 ${esc(f.naam)}</button> <span class="small" style="opacity:.7">${fmtBytes(f.grootte || 0)}</span>${leesbaar && !mine ? ` <button class="link small" data-act="bersaveopen" data-id="${m.id}" data-pad="${esc(f.pad)}">＋ bij mijn stof</button>` : ''}${sv ? berSaveRow() : ''}</div>`;
+  }
+  if (m.stof) {
+    const s = m.stof; const sv = P.save && P.save.id === m.id && P.save.pad === 'stof';
+    h += `<div class="berstof"><div><b>${s.soort === 'deck' ? '🃏' : '📚'} ${esc(s.titel || 'Stof')}</b> <span class="small" style="opacity:.75">${s.soort === 'deck' ? plural((s.cards || []).length, 'kaart', 'kaarten') : plural(Math.round((s.tekst || '').length / 6), 'woord', 'woorden')}</span></div>
+      ${s.soort === 'doc' ? `<details><summary class="link small" style="cursor:pointer">Lees</summary><div class="small" style="white-space:pre-wrap;max-height:260px;overflow:auto;margin-top:6px">${esc((s.tekst || '').slice(0, 20000))}</div></details>` : `<details><summary class="link small" style="cursor:pointer">Bekijk kaarten</summary><ul class="small" style="margin:6px 0 0;padding-left:18px">${(s.cards || []).slice(0, 40).map(c => `<li><b>${esc(c.front)}</b> — ${esc(c.back)}</li>`).join('')}</ul></details>`}
+      ${mine ? '' : s.soort === 'deck' ? `<button class="btn sm" data-act="berdeck" data-id="${m.id}">＋ Voeg toe aan mijn flashcards</button>` : `<button class="btn sm" data-act="bersaveopen" data-id="${m.id}" data-pad="stof">＋ Bewaar bij mijn stof</button>`}${sv ? berSaveRow() : ''}</div>`;
+  }
+  if (mine) h += conf ? `<div class="small" style="margin-top:4px">Verwijderen? <button class="link small" style="color:inherit" data-act="berdel" data-id="${m.id}">Ja</button> · <button class="link small" style="color:inherit" data-act="cancel">Nee</button></div>` : `<button class="link small berx" data-act="confirm" data-key="berdel:${m.id}" title="Verwijder bericht" aria-label="Verwijder bericht">✕</button>`;
+  return h + `</div>`;
+}
+function berSaveRow() {
+  return `<div class="row" style="margin-top:6px;gap:6px"><select id="berVak" style="width:auto;max-width:100%">${S.vakken.map(v => `<option value="${v.id}">${esc(v.naam)}</option>`).join('')}<option value="">Zonder vak</option></select><button class="btn sm hl" data-act="bersave">Bewaar</button><button class="link small" style="color:inherit" data-act="bersavedicht">Annuleer</button></div>`;
+}
+function berComposer() {
+  const P = P0();
+  let h = `<section class="panel bercomp">`;
+  if (P.files.length || P.stof) h += `<div class="chips" style="margin-bottom:8px">${P.files.map((f, i) => `<span class="pill">📎 ${esc(f.name)} · ${fmtBytes(f.size)} <button class="link small" data-act="berfiledel" data-i="${i}" aria-label="Weghalen">✕</button></span>`).join('')}${P.stof ? `<span class="pill">${P.stof.soort === 'deck' ? '🃏' : '📚'} ${esc(P.stof.titel)} <button class="link small" data-act="berstofdel" aria-label="Weghalen">✕</button></span>` : ''}</div>`;
+  if (P.stofKies) {
+    const z = P.stofZoek.toLowerCase();
+    const docs = S.docs.filter(d => !z || d.title.toLowerCase().includes(z)).slice(0, 30), decks = S.decks.filter(d => !z || d.title.toLowerCase().includes(z)).slice(0, 30);
+    h += `<div class="berpick"><div class="row between"><b>Kies stof uit de app</b><button class="link small" data-act="berstofdicht">Sluiten</button></div>
+      <input id="berStofZoek" placeholder="Zoek…" value="${esc(P.stofZoek)}" style="margin:6px 0">
+      ${docs.length ? `<span class="label">Documenten</span>${docs.map(d => `<button class="item beritem" data-act="berstofkies" data-soort="doc" data-id="${d.id}"><span class="main"><span class="t">📚 ${esc(d.title)}</span><span class="small muted">${esc(vakNaam(d.vak_id))}${d.summary ? ' · met samenvatting' : ''}</span></span></button>`).join('')}` : ''}
+      ${decks.length ? `<span class="label">Flashcardsets</span>${decks.map(d => `<button class="item beritem" data-act="berstofkies" data-soort="deck" data-id="${d.id}"><span class="main"><span class="t">🃏 ${esc(d.title)}</span><span class="small muted">${plural((d.cards || []).length, 'kaart', 'kaarten')}</span></span></button>`).join('')}` : ''}
+      ${!docs.length && !decks.length ? '<p class="small muted">Geen stof gevonden.</p>' : ''}</div>`;
+  }
+  h += `<textarea id="berTekst" rows="3" placeholder="Schrijf een bericht of uitleg…" maxlength="8000">${esc(P.draft || '')}</textarea>
+    <div class="row between" style="margin-top:8px"><div class="row" style="gap:6px"><label class="btn sm ghost" style="cursor:pointer">📎 Bestand<input type="file" id="berFile" multiple hidden accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv,image/*"></label><button class="btn sm ghost" data-act="berstofopen">📚 Stof uit de app</button></div>
+    <button class="btn hl" data-act="berstuur" ${P.sending ? 'disabled' : ''}>${P.sending ? 'Versturen…' : 'Verstuur'}</button></div></section>`;
+  return h;
+}
+async function berStuur() {
+  const P = P0(); const gid = P.open; if (!gid || P.sending) return;
+  const tekst = (($('#berTekst') && $('#berTekst').value) || P.draft || '').trim();
+  if (!tekst && !P.files.length && !P.stof) { toast('Schrijf iets, of voeg een bestand of stof toe.'); return; }
+  P.sending = true; P.draft = tekst; render();
+  try {
+    const key = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+    const bijlagen = [];
+    for (const f of P.files) {
+      const safe = f.name.replace(/[^\w.\-]+/g, '_').slice(-120) || 'bestand';
+      const pad = `${gid}/${key}/${safe}`;
+      const { error } = await sb.storage.from('berichten').upload(pad, f, { upsert: false, contentType: f.type || undefined });
+      if (error) throw { message: `${f.name} uploaden lukte niet (${error.message || 'fout'})` };
+      bijlagen.push({ naam: f.name, pad, type: f.type || '', grootte: f.size });
+    }
+    const row = await q(sb.from('berichten').insert({ gesprek_id: gid, afzender_id: S.user.id, tekst, bijlagen, stof: P.stof || null }).select().single());
+    P.msgs[gid] = (P.msgs[gid] || []).concat(row); P.files = []; P.stof = null; P.stofKies = false; P.draft = ''; const ta = $('#berTekst'); if (ta) ta.value = '';
+    const g = (P.list || []).find(x => x.id === gid); if (g) { g.laatste = tekst || (row.stof ? '📚 ' + row.stof.titel : '📎 ' + ((bijlagen[0] || {}).naam || '')); g.laatste_van = (S.account && S.account.name) || ''; g.laatste_at = row.created_at; P.list.sort((a, b) => new Date(b.laatste_at) - new Date(a.laatste_at)); }
+    berPush(row.id);
+  } catch (e) { if (e && e.message && !e.code) toast(e.message, 7000); else dbErr(e); }
+  finally { P.sending = false; render(); scrollBerichten(); }
+}
+async function berPush(id) {
+  try {
+    const s2 = await freshSession(); if (!s2) return;
+    await fetch(`${CFG.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/${CFG.BERICHTEN_FUNCTION || 'Berichten'}`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_KEY, Authorization: `Bearer ${s2.access_token}` }, body: JSON.stringify({ id }) });
+  } catch { /* pushmelding is een extraatje */ }
+}
+async function berStofKies(soort, id) {
+  const P = P0();
+  if (soort === 'deck') { const d = S.decks.find(x => x.id === id); if (!d) return; P.stof = { soort: 'deck', titel: d.title, cards: (d.cards || []).slice(0, 300).map(c => ({ front: String(c.front || '').slice(0, 500), back: String(c.back || '').slice(0, 1500) })) }; }
+  else {
+    const d = S.docs.find(x => x.id === id); if (!d) return;
+    try { await ensureTexts([id]); } catch (e) { dbErr(e); return; }
+    P.stof = { soort: 'doc', titel: d.title, tekst: (S.texts[id] || '').slice(0, 100000), samenvatting: d.summary ? String(d.summary).slice(0, 20000) : undefined };
+  }
+  P.stofKies = false; render();
+}
+async function berFileBlob(pad) { const { data, error } = await sb.storage.from('berichten').download(pad); if (error || !data) throw error || new Error('download'); return data; }
+let berTimer = null;
+function berPoll() {
+  clearInterval(berTimer);
+  berTimer = setInterval(async () => {
+    if (!S.user || document.visibilityState !== 'visible') return;
+    const P = P0(); if (P.err === 'setup') return;
+    try {
+      if (S.tab === 'berichten' && P.open) { const typing = document.activeElement && document.activeElement.id === 'berTekst'; const n = await loadBerichten(P.open, true); if (n) { if (typing) { const box = $('#berBox'); if (box) { box.innerHTML = (P.msgs[P.open] || []).map(berMsg).join(''); box.scrollTop = box.scrollHeight; } } else { render(); scrollBerichten(); } } }
+      else { const voor = postUnread(); await loadGesprekken(); if (postUnread() !== voor || S.tab === 'berichten') { const typing = document.activeElement && /^(berZoek|berTekst)$/.test(document.activeElement.id); if (!typing) render(); } }
+    } catch {}
+  }, 20000);
+}
+let berLink = (() => { const m = location.search.match(/[?&]gesprek=([0-9a-f-]{36})/i); return m ? m[1] : null; })();
+if (berLink) { try { history.replaceState(null, '', location.pathname); } catch {} }
 
 /* ---- Oefentoets ---- */
 function vToets() {
@@ -1824,7 +2011,7 @@ async function pushOff() {
   try { const ep = PUSH.sub && PUSH.sub.endpoint; if (PUSH.sub) await PUSH.sub.unsubscribe(); if (ep) await sb.from('push_subs').delete().eq('endpoint', ep); PUSH.sub = null; toast('Meldingen staan uit op dit apparaat.'); } catch (e) { console.error(e); }
   render();
 }
-function pushPrefs() { return { herhalen: true, toetsen: true, opdrachten: true, updates: true, uur: 18, ...((S.account && S.account.push_prefs) || {}) }; }
+function pushPrefs() { return { herhalen: true, toetsen: true, opdrachten: true, updates: true, berichten: true, uur: 18, ...((S.account && S.account.push_prefs) || {}) }; }
 function pushPanel() {
   if (!S.account) return '';
   const P = pushPrefs(); const on = !!PUSH.sub;
@@ -1835,6 +2022,7 @@ function pushPanel() {
     ${on ? `<div class="stack" style="gap:6px"><label class="check"><input type="checkbox" data-pushpref="herhalen" ${P.herhalen ? 'checked' : ''}><span>🃏 Flashcards die klaarstaan</span></label>
       <label class="check"><input type="checkbox" data-pushpref="toetsen" ${P.toetsen ? 'checked' : ''}><span>📝 Toets morgen</span></label>
       <label class="check"><input type="checkbox" data-pushpref="opdrachten" ${P.opdrachten ? 'checked' : ''}><span>📌 Opdracht morgen inleveren</span></label>
+      <label class="check"><input type="checkbox" data-pushpref="berichten" ${P.berichten ? 'checked' : ''}><span>✉️ Nieuwe berichten (direct)</span></label>
       <label class="check"><input type="checkbox" data-pushpref="updates" ${P.updates ? 'checked' : ''}><span>✨ Nieuws over Leerpuls</span></label>
       <label class="field" style="max-width:220px"><span>Tijdstip</span><select data-pushpref="uur">${[8, 12, 16, 17, 18, 19, 20, 21].map(u => `<option value="${u}" ${+P.uur === u ? 'selected' : ''}>${u}:00</option>`).join('')}</select></label></div>
       <div class="row"><button class="btn sm ghost" data-act="pushtest">Stuur testmelding</button><button class="link small" data-act="pushoff">Zet uit op dit apparaat</button></div>`
@@ -3196,7 +3384,7 @@ function vKlassen() {
   if (S.klasErr) return `<div class="stack"><h2>Klassen</h2><div class="notice">Klassen zijn nog niet ingesteld. De beheerder moet <b>docenten.sql</b> in Supabase draaien.</div></div>`;
   if (!T.klassen.length) return `<div class="stack"><h2>Klassen</h2><section class="panel"><p>Je bent nog niet aan een klas gekoppeld.</p><p class="small muted">${S.isAdmin ? 'Maak klassen aan en koppel docenten bij Beheer → Klassen.' : 'De beheerder koppelt je aan de klassen die je mag beheren. Daarna zie je ze hier.'}</p></section></div>`;
   const k = T.klassen.find(x => x.id === T.sel) || T.klassen[0]; T.sel = k.id;
-  let h = `<div class="stack"><div class="row between"><h2>Klassen</h2><button class="btn sm ghost" data-act="klasreload">Vernieuwen</button></div>`;
+  let h = `<div class="stack"><div class="row between"><h2>Klassen</h2><div class="row" style="gap:6px">${P0().err === 'setup' ? '' : `<button class="btn sm" data-act="berklas" data-id="${k.id}">✉️ Bericht aan ${esc(k.naam)}</button>`}<button class="btn sm ghost" data-act="klasreload">Vernieuwen</button></div></div>`;
   if (T.klassen.length > 1) h += `<div class="chips">${T.klassen.map(x => `<button class="chip" data-act="klassel" data-id="${x.id}" aria-pressed="${x.id === k.id}">${esc(x.naam)}</button>`).join('')}</div>`;
   h += `<section class="panel"><div class="row between"><h3>${esc(k.naam)}</h3><span class="small muted">${esc(k.school || '')}</span></div>${seg('T.sub', T.sub, [['opdrachten', 'Opdrachten'], ['toetsen', 'Toetsen'], ['lesstof', 'Lesstof'], ['leerlingen', 'Leerlingen']])}</section>`;
   if (T.sub === 'toetsen') h += klasToetsenTab(k);
@@ -3524,6 +3712,39 @@ document.addEventListener('click', async e => {
   if (a === 'vakrename') { S.confirm = 'rename:' + d.id; render(); const i = $('#vakRename'); if (i) i.focus(); return; }
   if (a === 'vakrenamesave') { const naam = $('#vakRename').value.trim(); if (!naam) return; await q(sb.from('vakken').update({ naam }).eq('id', d.id)); vak(d.id).naam = naam; S.confirm = null; render(); return; }
   if (a === 'vakdel') { await q(sb.from('vakken').delete().eq('id', d.id)); S.vakken = S.vakken.filter(v => v.id !== d.id); [S.docs, S.decks, S.results, S.exams].forEach(arr => arr.forEach(x => { if (x.vak_id === d.id) x.vak_id = null; })); S.openVak = null; S.confirm = null; render(); toast('Vak verwijderd. De documenten staan nu onder "Zonder vak".'); return; }
+  if (a === 'bernieuw') { const P = P0(); P.kies = !P.kies; P.zoek = ''; render(); if (P.kies && P.contacts === null) { try { const { data, error } = await sb.rpc('mijn_contacten'); P.contacts = error ? [] : (data || []); } catch { P.contacts = []; } render(); } return; }
+  if (a === 'berkiesdicht') { P0().kies = false; render(); return; }
+  if (a === 'beropen') { await openGesprek(d.id); return; }
+  if (a === 'berterug') { const P = P0(); P.open = null; S.confirm = null; render(); loadGesprekken().then(render); return; }
+  if (a === 'berstart') { try { const id = await q(sb.rpc('start_gesprek', { p_user: d.id })); await loadGesprekken(); await openGesprek(id); } catch (err) { toast('Dit lukte niet: ' + (err.message || 'je kunt deze persoon geen bericht sturen.'), 7000); } return; }
+  if (a === 'berklas') { try { const id = await q(sb.rpc('klas_gesprek', { p_klas: d.id })); await loadGesprekken(); await openGesprek(id); } catch (err) { dbErr(err); } return; }
+  if (a === 'berstuur') { await berStuur(); return; }
+  if (a === 'berfiledel') { P0().files.splice(+d.i, 1); render(); return; }
+  if (a === 'berstofopen') { const P = P0(); P.stofKies = !P.stofKies; P.stofZoek = ''; render(); return; }
+  if (a === 'berstofdicht') { P0().stofKies = false; render(); return; }
+  if (a === 'berstofdel') { P0().stof = null; render(); return; }
+  if (a === 'berstofkies') { await berStofKies(d.soort, d.id); return; }
+  if (a === 'berfile') { try { const { data, error } = await sb.storage.from('berichten').createSignedUrl(d.pad, 300); if (error || !data) throw error; window.open(data.signedUrl, '_blank', 'noopener'); } catch (err) { toast('Openen lukte niet. Probeer het opnieuw.'); } return; }
+  if (a === 'berdel') { const P = P0(); try { await q(sb.from('berichten').delete().eq('id', d.id)); P.msgs[P.open] = (P.msgs[P.open] || []).filter(m => m.id !== d.id); S.confirm = null; render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'berblok') { const P = P0(); try { await q(sb.rpc('gesprek_blokkeren', { p_gesprek: P.open, p_aan: d.aan === '1' })); await loadBerichten(P.open, false); toast(d.aan === '1' ? 'Gesprek geblokkeerd. Je ontvangt hier geen berichten meer.' : 'Gesprek gedeblokkeerd.'); render(); } catch (err) { dbErr(err); } return; }
+  if (a === 'bersaveopen') { P0().save = { id: d.id, pad: d.pad }; render(); return; }
+  if (a === 'bersavedicht') { P0().save = null; render(); return; }
+  if (a === 'bersave') {
+    const P = P0(); const sv = P.save; if (!sv) return; const vakId = ($('#berVak') && $('#berVak').value) || null;
+    const m = (P.msgs[P.open] || []).find(x => x.id === sv.id); if (!m) return; P.save = null;
+    if (sv.pad === 'stof') { setBusy('Opslaan…'); try { await addDocument({ title: (m.stof.titel || 'Stof') + ' (van ' + (m.afzender_naam || 'iemand').split(' ')[0] + ')', vakId, text: m.stof.tekst || '', source: 'bericht' }); } finally { setBusy(null); } return; }
+    const f = (m.bijlagen || []).find(x => x.pad === sv.pad); if (!f) return;
+    setBusy(`“${f.naam}” ophalen…`);
+    try { const blob = await berFileBlob(f.pad); const file = new File([blob], f.naam, { type: f.type || blob.type }); await handleFiles([file], vakId); }
+    catch (err) { setBusy(null); toast('Opslaan lukte niet. Probeer het opnieuw.'); }
+    return;
+  }
+  if (a === 'berdeck') {
+    const P = P0(); const m = (P.msgs[P.open] || []).find(x => x.id === d.id); if (!m || !m.stof) return;
+    const cards = (m.stof.cards || []).filter(c => c && c.front && c.back).map((c, i) => ({ id: 'c' + i, front: String(c.front), back: String(c.back), box: 1, due: 0 }));
+    try { const row = await q(sb.from('decks').insert({ title: String(m.stof.titel || 'Flashcards').slice(0, 80), cards }).select().single()); S.decks.unshift(row); toast(`${plural(cards.length, 'kaart', 'kaarten')} toegevoegd aan je flashcards.`); } catch (err) { dbErr(err); }
+    return;
+  }
   if (a === 'klasvakken') {
     const inp = $('#kv_' + d.id); const vakken = [...new Set((inp ? inp.value : '').split(',').map(x => x.trim().replace(/\s+/g, ' ')).filter(Boolean).map(x => x.slice(0, 60)))].slice(0, 12);
     try { await q(sb.from('klassen').update({ vakken }).eq('id', d.id)); const k = (S.admin.klassen || []).find(x => x.id === d.id); if (k) k.vakken = vakken; toast(vakken.length ? `Opgeslagen. Studenten van deze klas krijgen ${vakken.join(', ')} bij Vakken zodra ze de app openen.` : 'Geen klasvakken meer.', 7000); render(); } catch (e) { dbErr(e); }
@@ -3830,6 +4051,11 @@ document.addEventListener('click', async e => {
   } catch (err) { dbErr(err); }
 });
 document.addEventListener('change', async e => {
+  if (e.target.id === 'berFile') {
+    const P = P0(); const fs = [...e.target.files]; e.target.value = '';
+    for (const f of fs) { if (f.size > 25e6) { toast(`${f.name} is groter dan 25 MB.`); continue; } if (P.files.length >= 5) { toast('Maximaal 5 bestanden per bericht.'); break; } P.files.push(f); }
+    render(); return;
+  }
   const t = e.target;
   if (t.dataset && t.dataset.photo) { const files = [...(t.files || [])]; t.value = ''; if (files.length) { const ti = $('#phTitle'); if (ti) S.phTitle = ti.value; const pv = $('#phVak'); if (pv) S.phVak = pv.value; await addPhotos(files); render(); } return; }
   if (t.id === 'phVak') { S.phVak = t.value; return; }
@@ -3893,6 +4119,9 @@ document.addEventListener('change', async e => {
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'phTitle') S.phTitle = e.target.value;
+  if (e.target.id === 'berTekst') P0().draft = e.target.value;
+  if (e.target.id === 'berZoek') { P0().zoek = e.target.value; render(); return; }
+  if (e.target.id === 'berStofZoek') { P0().stofZoek = e.target.value; render(); return; }
   if (e.target.id === 'mktAns' && S.mcase) { S.mcase.answer = e.target.value; S.confirm = null; const c = $('#mktCount'); if (c) c.textContent = plural(e.target.value.trim().split(/\s+/).filter(Boolean).length, 'woord', 'woorden'); }
   if (e.target.id === 'chatIn' && V.cd) cancelCountdown();
   if (e.target.id === 'vsText' || e.target.id === 'vsRubric') { const V2 = S.vs; if (e.target.id === 'vsText') { V2.text = e.target.value; V2.pasted = true; V2.titel = V2.titel || 'Geplakte tekst'; } else { V2.rubric = e.target.value; V2.rubricPasted = true; } const btn = document.querySelector('[data-act="vsgo"]'); if (btn) btn.disabled = !(V2.text.trim().length > 200 && (V2.rubric.trim().length > 20 || V2.algemeen)); }
